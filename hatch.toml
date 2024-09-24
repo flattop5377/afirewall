@@ -1,4 +1,0 @@
-[build.targets.your-target-name]
-require-runtime-dependencies = true
-
-
