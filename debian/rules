@@ -3,27 +3,28 @@
 #%:
 #	dh $@ --with python3
 
-BASE=debian/afirewall/usr/share/afirewall
+BASE=debian/afirewall/
+SHARE=${BASE}/usr/share/afirewall/
 
 default :
 	echo "Doing nothing"
 
-${BASE} :
-	mkdir -p ${BASE}
+${SHARE} :
+	mkdir -p ${SHARE}
 
 
-${BASE}/afirewall : ${BASE} ../afirewall/afirewall
+${SHARE}/afirewall : ${SHARE} ../afirewall/afirewall
 	pwd
 	cp ../../afirewall/afirewall ${BASE}/afirewall
 
-build build-arch build-indep : ${BASE}/afirewall
+build build-arch build-indep : ${SHARE}/afirewall
 
-binary binary-arch binary-indep : ${BASE}/afirewall
+binary binary-arch binary-indep : ${SHARE}/afirewall
 
 .PHONY : clean
 
 clean :
-#	rm -rf debian/afirewall
+	rm -rf ${BASE}
 
 patch :
 
