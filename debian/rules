@@ -5,16 +5,24 @@
 
 BASE=afirewall/usr/share/afirewall
 
-${BASE}/afirewall: ../afirewall/afirewall
+default :
+	echo "Doing nothing"
+
+${BASE} :
+	mkdir -p ${BASE}
+
+
+${BASE}/afirewall : ${BASE} ../afirewall/afirewall
 	cp ../afirewall/afirewall ${BASE}/afirewall
 
-build build-arch build-indep : afirewall
+build build-arch build-indep : ${BASE}/afirewall
 
-binary binary-arch binary-indep : afirewall
+binary binary-arch binary-indep : ${BASE}/afirewall
 
 .PHONY : clean
 
 clean :
+	rm -rf afirewall
 
 patch :
 
