@@ -1,9 +1,0 @@
-  #############################################################################
-  #
-  ## Outbound Bacula Storage Daemon Rules
-  #
-  #############################################################################
-  chain ACCEPT_BACULASTORAGEDAEMON {
-    ct state new,established tcp dport 9103 accept
-  }
-
