@@ -1,0 +1,48 @@
+  #############################################################################
+  #
+  ## SSH Rules
+  #
+  #############################################################################
+
+  ##
+  # SSH connection rate limit
+  #   Ansible safe, since Ansible reuses connections when possible
+  #
+  # Meters documentat: https://wiki.nftables.org/wiki-nftables/index.php/Meters
+  #
+  set ssh_rate_limit {
+    type ipv4_addr
+    size 65535
+    timeout 900s
+    flags dynamic
+  }
+
+  ##
+  # SSH number of connections per source IP limit
+  #
+  set ssh_connection_limit {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+  ##
+  # This accepts IPv4 SSH traffix
+  #
+  chain ACCEPT_SSH {
+      ##
+      # Rate limit new connections per source ip address
+      #
+      ct state new tcp dport 22 update @ssh_rate_limit { ip saddr limit rate 5/minute } continue
+
+      ##
+      # Limit to 20 connections per source IP address
+      #
+      ct state new tcp dport 22 add @ssh_connection_limit { ip saddr ct count over 20 } continue
+
+      ##
+      # Allow SSH
+      #   Destination port 22, protocol TCP
+      #
+      ct state new,established tcp dport 22 accept
+  }
