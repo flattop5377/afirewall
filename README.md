@@ -1,0 +1,14 @@
+# A pure Netfilter Firewall on Linux
+## Goals
+   - Be secure
+   - Be easy to install, configure, and maintain
+   - Be Ansible friendly
+   - Use common tools and formats
+## Installation
+### Ansible
+## Developer instructions
+### Python environment setup
+'''
+$ python3 -m venv .venv
+$ python3 -m pip install -r requirements.txt
+'''

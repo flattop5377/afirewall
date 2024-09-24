@@ -1,0 +1,5 @@
+afirewall (20240921.0.1) unstable; urgency=low
+  * Genesis 1:1
+  A pure Netfilter Firewall for Linux hooks into netfilter-persistent as a
+  plugin.  Next step is packaging for installation.
+ -- Flattop <flattop5377@proton.me>  Mon, 23 Sep 2024 18:53:00 +0000
