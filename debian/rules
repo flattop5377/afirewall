@@ -5,9 +5,17 @@
 
 BASE=debian/afirewall/
 SHARE=${BASE}/usr/share/afirewall/
+ETC=${BASE}/etc
+SBIN=${BASE}/usr/sbin
 
 default :
 	echo "Supports Debian build targets see: https://www.debian.org/doc/debian-policy/ch-source.html#main-building-script-debian-rules"
+
+${ETC} :
+	mkdir -p ${ETC}
+
+${SBIN} :
+	mkdir -p ${SBIN}
 
 ${SHARE} :
 	mkdir -p ${SHARE}
@@ -24,9 +32,11 @@ ${SHARE}/afirewall.conf : afirewall.conf
 ${SHARE}/afirewall : ${SHARE} afirewall/afirewall
 	cp afirewall/afirewall ${SHARE}/afirewall
 
-build build-arch build-indep : ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
+build build-arch build-indep : ${ETC} ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
+	ln -s ${ETC}/afirewall.conf ${SHARE}/afirewall.conf
 
-binary binary-arch binary-indep : ${SHARE}/afirewall
+binary binary-arch binary-indep : ${SBIN} ${SHARE}/afirewall
+	ln -s ${SHARE}/afirewall ${SBIN}/afirewall
 
 .PHONY : clean
 
