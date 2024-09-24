@@ -1,5 +1,8 @@
 generated/
 *.swp
+requirements.txt
+pyproject.toml
+hatch.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
