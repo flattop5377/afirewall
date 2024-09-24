@@ -142,7 +142,7 @@ def get_external_ipv6_interface(destination):
      interface = None
    return interface
 
-def parse_arguments():
+def get_parser():
    parser = argparse.ArgumentParser(description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux')
    parser.add_argument('command', choices=['start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test'], help='Manage netfilter rules for a firewall')
    parser.add_argument('-nft', help='full path to nft - default /usr/sbin/nft', default='/usr/sbin/nft')
@@ -150,6 +150,10 @@ def parse_arguments():
    parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
    parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
    parser.add_argument('-templates', help='path to the templates - default ./templates', default='./templates')
+   return parser
+
+def parse_arguments():
+   parser = get_parser()
    args = parser.parse_args()
 
    if not shutil.which(args.nft, mode=os.X_OK): sys.exit(args.nft + ' is not executable')

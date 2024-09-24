@@ -3,5 +3,5 @@ require-runtime-dependencies = true
 
 [build.hooks.argparse-manpage]
 manpages = [
-  "man/afirewall.8:function=get_
+  "man/afirewall.8:function=get_parser:file=afirewall/afirewall",
 ]
