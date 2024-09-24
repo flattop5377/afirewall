@@ -1,0 +1,35 @@
+Metadata-Version: 2.3
+Name: afirewall
+Version: 20240921.0.1
+Summary: A pure Netfilter Firewall configured for Linux
+Project-URL: Homepage, https://github.com/flattop5377/afirewall
+Author-email: Flattop5377 <flattop5377@proton.me>
+Maintainer-email: Flattop5377 <flattop5377@proton.me>
+License: Copyright 2024 Flattop5377 <flattop5377@proton.me>
+        
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+        
+            http://www.apache.org/licenses/LICENSE-2.0
+        
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+License-File: LICENSE
+License-File: LICENSE-SHORT.txt
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: System Administrators
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Natural Language :: English
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: System :: Networking :: Firewalls
+Requires-Python: >=3.9
+Requires-Dist: jinja2
+Description-Content-Type: text/plain
+
+A firewall that uses nft only, is easily configured through Ansible, has some sane defaults for security, doesn't restrict the full flexibility of other pure netfilter firewall configuration, uses common or simple tools and formats, and integrates nicely with existing networking architecture.
