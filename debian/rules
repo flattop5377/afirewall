@@ -7,17 +7,24 @@ BASE=debian/afirewall/
 SHARE=${BASE}/usr/share/afirewall/
 
 default :
-	echo "Doing nothing"
+	echo "Supports Debian build targets see: https://www.debian.org/doc/debian-policy/ch-source.html#main-building-script-debian-rules"
 
 ${SHARE} :
 	mkdir -p ${SHARE}
 
+${SHARE}/templates: templates/*
+	cp -r templates ${SHARE}
+
+${SHARE}/lists : lists/*
+	cp -r lists ${SHARE}
+
+${SHARE}/afirewall.conf : afirewall.conf
+	cp afirewall.conf ${SHARE}/afirewall.conf
 
 ${SHARE}/afirewall : ${SHARE} afirewall/afirewall
-	pwd
 	cp afirewall/afirewall ${SHARE}/afirewall
 
-build build-arch build-indep : ${SHARE}/afirewall
+build build-arch build-indep : ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
 
 binary binary-arch binary-indep : ${SHARE}/afirewall
 
@@ -26,5 +33,5 @@ binary binary-arch binary-indep : ${SHARE}/afirewall
 clean :
 	rm -rf ${BASE}
 
-patch :
+patch : build
 
