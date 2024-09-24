@@ -1,5 +1,5 @@
-[build-system]
-requires = ["hatchling"]
+[uild-system]
+requires = ["hatchling", "hatch-argparse-manpage"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,3 +7,31 @@ name = "afirewall"
 version = "20240921.0.1"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+  "jinja2"
+]
+authors = [
+  {name = "Flattop5377", email="flattop5377@proton.me"},
+]
+maintainers = [
+  {name = "Flattop5377", email="flattop5377@proton.me"},
+]
+description = "A pure Netfilter Firewall configured for Linux"
+readme = "README.md"
+license = {file = "LICENSE.md"}
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Natural Language :: English",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Networking :: Firewalls",
+]
+
+[project.urls]
+Homepage = "https://github.com/flattop5377/afirewall"
+
+[project.scripts]
+afirewall = "afirewall:main"

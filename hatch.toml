@@ -1,4 +1,7 @@
 [build.targets.your-target-name]
 require-runtime-dependencies = true
 
-
+[build.hooks.argparse-manpage]
+manpages = [
+  "man/afirewall.8:function=get_
+]
