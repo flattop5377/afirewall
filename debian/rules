@@ -35,7 +35,7 @@ ${SBIN}/afirewall : ${SBIN} afirewall/afirewall
 build build-arch build-indep : ${ETC} ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
 	ln -s ${ETC}/afirewall.conf ${SHARE}/afirewall.conf
 
-binary binary-arch binary-indep : ${SBIN} ${SHARE}/afirewall
+binary binary-arch binary-indep : ${SBIN} ${SBIN}/afirewall
 	ln -s ${SHARE}/afirewall ${SBIN}/afirewall
 
 .PHONY : clean
