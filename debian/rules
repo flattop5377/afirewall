@@ -10,7 +10,7 @@ afirewall: afirewall/usr/share/afirewall/afirewall
 
 build build-arch build-indep : afirewall
 
-binary binary-arch binary-indep :
+binary binary-arch binary-indep : afirewall
 
 .PHONY : clean
 
