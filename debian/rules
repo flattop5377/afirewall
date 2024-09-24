@@ -13,9 +13,9 @@ ${SHARE} :
 	mkdir -p ${SHARE}
 
 
-${SHARE}/afirewall : ${SHARE} ../afirewall/afirewall
+${SHARE}/afirewall : ${SHARE} afirewall/afirewall
 	pwd
-	cp ../../afirewall/afirewall ${BASE}/afirewall
+	cp afirewall/afirewall ${BASE}/afirewall
 
 build build-arch build-indep : ${SHARE}/afirewall
 
