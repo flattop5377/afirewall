@@ -15,7 +15,7 @@ ${SHARE} :
 
 ${SHARE}/afirewall : ${SHARE} afirewall/afirewall
 	pwd
-	cp afirewall/afirewall ${BASE}/afirewall
+	cp afirewall/afirewall ${SHARE}/afirewall
 
 build build-arch build-indep : ${SHARE}/afirewall
 
