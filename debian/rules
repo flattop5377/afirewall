@@ -5,7 +5,7 @@
 
 BASE=afirewall/usr/share/afirewall
 
-afirewall: afirewall/usr/share/afirewall/afirewall
+afirewall:
 	cp ../afirewall/afirewall ${BASE}/afirewall
 
 build build-arch build-indep : afirewall
