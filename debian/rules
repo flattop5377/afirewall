@@ -29,8 +29,8 @@ ${SHARE}/lists : lists/*
 ${SHARE}/afirewall.conf : afirewall.conf
 	cp afirewall.conf ${SHARE}/afirewall.conf
 
-${SHARE}/afirewall : ${SHARE} afirewall/afirewall
-	cp afirewall/afirewall ${SHARE}/afirewall
+${SBIN}/afirewall : ${SBIN} afirewall/afirewall
+	cp afirewall/afirewall ${SBIN}/afirewall
 
 build build-arch build-indep : ${ETC} ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
 	ln -s ${ETC}/afirewall.conf ${SHARE}/afirewall.conf
