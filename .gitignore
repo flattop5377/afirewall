@@ -1,6 +1,5 @@
 generated/
 *.swp
-requirements.txt
 pyproject.toml
 hatch.toml
 
