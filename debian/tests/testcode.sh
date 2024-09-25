@@ -1,3 +1,3 @@
 #!/bin/sh
 #
-afirewall test
+/usr/sbin/afirewall test
