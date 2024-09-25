@@ -1,3 +1,4 @@
+#!/usr/bin/dh-exec
 afirewall.conf usr/share/afirewall
 afirewall/afirewall usr/share/afirewal
 lists usr/share/afirewall
