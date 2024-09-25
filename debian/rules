@@ -1,46 +1,19 @@
 #!/usr/bin/make -f
 
-#%:
-#	dh $@ --with python3
-
-BASE=debian/afirewall/
-SHARE=${BASE}/usr/share/afirewall/
-ETC=${BASE}/etc
-SBIN=${BASE}/usr/sbin
-
 default :
 	echo "Supports Debian build targets see: https://www.debian.org/doc/debian-policy/ch-source.html#main-building-script-debian-rules"
 
-${ETC} :
-	mkdir -p ${ETC}
+build build-arch build-indep :
 
-${SBIN} :
-	mkdir -p ${SBIN}
-
-${SHARE} :
-	mkdir -p ${SHARE}
-
-${SHARE}/templates: templates/*
-	cp -r templates ${SHARE}
-
-${SHARE}/lists : lists/*
-	cp -r lists ${SHARE}
-
-${SHARE}/afirewall.conf : afirewall.conf
-	cp afirewall.conf ${SHARE}/afirewall.conf
-
-${SBIN}/afirewall : ${SBIN} afirewall/afirewall
-	cp afirewall/afirewall ${SBIN}/afirewall
-
-build build-arch build-indep : ${ETC} ${SHARE} ${SHARE}/afirewall ${SHARE}/afirewall.conf ${SHARE}/lists ${SHARE}/templates
-	ln -s ${ETC}/afirewall.conf ${SHARE}/afirewall.conf
-
-binary binary-arch binary-indep : ${SBIN} ${SBIN}/afirewall
+binary binary-arch binary-indep : 
+	dh_installdirs
+	dh_install
+	dh_links
 
 .PHONY : clean
 
 clean :
-	rm -rf ${BASE}
+	dh_clean
 
 patch : build
 
