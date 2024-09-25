@@ -1,20 +1,5 @@
 #!/usr/bin/make -f
+export DH_VERBOSE = 1
 
-default :
-	echo "Supports Debian build targets see: https://www.debian.org/doc/debian-policy/ch-source.html#main-building-script-debian-rules"
-
-build build-arch build-indep :
-
-binary binary-arch binary-indep : 
-	dh_installdirs
-	dh_install
-	dh_link
-	dh_fixperms
-
-.PHONY : clean
-
-clean :
-	dh_clean
-
-patch : build
-
+% :
+	dh $@
