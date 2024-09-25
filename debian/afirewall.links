@@ -1,3 +1,2 @@
-usr/share/afirewall/afirewall usr/sbin/afirewall
-usr/share/afirewall/afirewall.conf etc/afirewall/afirewall.conf
-usr/share/afirewall/generated etc/afirewall/generated
+usr/share/afirewall/lists etc/afirewall/lists
+usr/share/afirewall/templates etc/afirewall/templates

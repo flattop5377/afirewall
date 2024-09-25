@@ -1,5 +1,5 @@
 #!/usr/bin/dh-exec
-afirewall.conf usr/share/afirewall
-afirewall/afirewall usr/share/afirewall
+afirewall.conf etc/afirewall
+afirewall/afirewall usr/sbin/afirewall
 lists usr/share/afirewall
 templates usr/share/afirewall
