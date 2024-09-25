@@ -11,16 +11,6 @@ Files:     .gitattributes
            afirewall.conf
            afirewall/__init__.py
            afirewall/afirewall
-           debian/README.Debian
-           debian/afirewall.dirs
-           debian/afirewall.install
-           debian/afirewall.links
-           debian/changelog
-           debian/clean
-           debian/control
-           debian/copyright
-           debian/patches/series
-           
            hatch.toml
            lists/spoofed_IPV4_networks.list
            pyproject.toml
@@ -52,6 +42,7 @@ Files:     .gitattributes
            templates/ipv6/inbound/tcp/ssh.rules
 Copyright: 2024 Flattop5377 <flattop5377@proton.me>
 License:   Apache-2.0
+/usr/share/common-licenses/Apache-2.0
 
 Files:     debian/*
 Copyright:
