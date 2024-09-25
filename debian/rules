@@ -8,7 +8,7 @@ build build-arch build-indep :
 binary binary-arch binary-indep : 
 	dh_installdirs
 	dh_install
-	dh_links
+	dh_link
 
 .PHONY : clean
 
