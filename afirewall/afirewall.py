@@ -150,6 +150,7 @@ def get_parser():
    parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
    parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
    parser.add_argument('-templates', help='path to the templates - default ./templates', default='./templates')
+   parser.add_argument('-c', '--config', help='path to the configuration file', default='/etc/afirewall/afirewall.conf')
    return parser
 
 def parse_arguments():
@@ -165,6 +166,8 @@ def parse_arguments():
    ip_completed = subprocess.run(args=[args.ip, '-V'], capture_output=True, encoding='UTF-8')
    pattern = re.compile('ip utility.*')
    if not pattern.match(ip_completed.stdout): sys.exit(args.ip + ' doesn\'t appear to be ip?')
+
+   if not shutil.which(args.c, mode=os.R_OK): sys.exit(args.c + ' can\'t be opened')
 
    return args
 
@@ -183,7 +186,7 @@ def branch(tree, vector, value):
 
 def get_configuration():
    config = {}
-   with open('afirewall.conf', 'r') as file:
+   with open(args.c, 'r') as file:
       for line in file:
          li = re.sub('\s+', '', line)
          li = li.lower()
@@ -224,5 +227,3 @@ if __name__ == "__main__":
       case 'test':
          for interface in interfaces:
             test(args.templates, interface, config)
-
-            from enum import Enum
