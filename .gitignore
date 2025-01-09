@@ -1,7 +1,5 @@
 generated/
 *.swp
-pyproject.toml
-hatch.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
