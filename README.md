@@ -19,3 +19,13 @@ $ python3 -m pip install -r requirements.txt
 '''
 $ python3 -m unittest discover
 '''
+## Python Packager instructions
+Setup a development environment, and install hatch.
+### Process
+   1. Development branches get merged into the master branch, and eventually they are merged into the upstream/latest branch.
+Upstream/latest is where the code begins to turn into a python package.
+   2. Update project/version in pyproject.toml
+   3. Hatch
+'''
+$ python3 -m hatch build
+'''
