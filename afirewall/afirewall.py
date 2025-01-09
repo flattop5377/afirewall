@@ -167,7 +167,7 @@ def parse_arguments():
    pattern = re.compile('ip utility.*')
    if not pattern.match(ip_completed.stdout): sys.exit(args.ip + ' doesn\'t appear to be ip?')
 
-   if not shutil.which(args.c, mode=os.R_OK): sys.exit(args.c + ' can\'t be opened')
+   if not os.access(args.config, mode=os.R_OK): sys.exit(args.config + ' can\'t be opened')
 
    return args
 
@@ -186,7 +186,7 @@ def branch(tree, vector, value):
 
 def get_configuration():
    config = {}
-   with open(args.c, 'r') as file:
+   with open(args.config, 'r') as file:
       for line in file:
          li = re.sub('\s+', '', line)
          li = li.lower()
