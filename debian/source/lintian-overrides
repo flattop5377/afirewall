@@ -1,2 +1,2 @@
-afirewall: improbable-bug-number-in-closes 2 [usr/share/doc/afirewall/changelog.Debian.gz:1]
+afirewall: improbable-bug-number-in-closes *
 # Bug #2 was indeed closed.
