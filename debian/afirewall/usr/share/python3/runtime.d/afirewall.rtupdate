@@ -1,0 +1,7 @@
+#! /bin/sh
+set -e
+
+if [ "$1" = rtupdate ]; then
+	py3clean -p afirewall /usr/share/afirewall
+	py3compile -p afirewall  /usr/share/afirewall
+fi
