@@ -27,6 +27,6 @@ ecbd30e21cb8eb58e3b87a2ff9862504  usr/share/afirewall/templates/ipv4/outbound/tc
 2ede58459962ddd2db8e6313f8bfa35b  usr/share/afirewall/templates/ipv6/base.rules
 e160ecf1eeb22de42087e544c5aefd45  usr/share/afirewall/templates/ipv6/inbound/tcp/ssh.rules
 93caa57942cc7d9f23039cc4ca9c36a5  usr/share/doc/afirewall/README.Debian
-101d1946a8569da62220f82aeac7d6b3  usr/share/doc/afirewall/changelog.Debian.gz
+1721c532f665f718b6248705d89e8425  usr/share/doc/afirewall/changelog.Debian.gz
 8aa8bf502d64bbc9c8a20956acf32529  usr/share/doc/afirewall/copyright
 c66f1e99abeb1ce57944f4ab0b1fe50b  usr/share/python3/runtime.d/afirewall.rtupdate
