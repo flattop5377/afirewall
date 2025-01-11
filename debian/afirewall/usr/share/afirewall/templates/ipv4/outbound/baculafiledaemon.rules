@@ -1,9 +1,0 @@
-  #############################################################################
-  #
-  ## Outbound Bacula File Daemon Rules
-  #
-  #############################################################################
-  chain ACCEPT_BACULAFILEDAEMON {
-    ct state new,established tcp dport 9102 accept
-  }
-
