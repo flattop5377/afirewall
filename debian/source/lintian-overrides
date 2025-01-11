@@ -1,2 +1,2 @@
-afirewall: improbable-bug-number-in-closes *
+afirewall source: improbable-bug-number-in-closes *
 # Bug #2 was indeed closed.
