@@ -2,7 +2,7 @@ Package: afirewall
 Version: 20240921.0.2-1
 Architecture: all
 Maintainer: Flattop5377 <flattop5377@proton.me>
-Installed-Size: 99
+Installed-Size: 102
 Depends: python3:any, python3-jinja2, netfilter-persistent
 Section: net
 Priority: optional

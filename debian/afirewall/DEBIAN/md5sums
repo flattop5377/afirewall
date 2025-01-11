@@ -29,4 +29,5 @@ e160ecf1eeb22de42087e544c5aefd45  usr/share/afirewall/templates/ipv6/inbound/tcp
 93caa57942cc7d9f23039cc4ca9c36a5  usr/share/doc/afirewall/README.Debian
 1721c532f665f718b6248705d89e8425  usr/share/doc/afirewall/changelog.Debian.gz
 8aa8bf502d64bbc9c8a20956acf32529  usr/share/doc/afirewall/copyright
+bd7aeb5fdd49b4c3b2ca8ca4ec6f04ad  usr/share/lintian/overrides/afirewall
 c66f1e99abeb1ce57944f4ab0b1fe50b  usr/share/python3/runtime.d/afirewall.rtupdate
