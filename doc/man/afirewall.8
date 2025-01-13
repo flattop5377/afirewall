@@ -1,6 +1,3 @@
-.\" Manpage for afirewall.
-\." Contact flattop5377@proton.me to correct errors or types :)
-
 .TH man 8 "10 Jan 2025" "20240921.0.2" "afirewall man page"
 
 .SH NAME
@@ -25,7 +22,7 @@ Templates, for adding services that don't have a configuration shipped with the 
 .PP
 Lists, such as spoofed networks, are in /usr/share/lists and are linked to /etc/afirewall for convenience.
 
-.SH COMMAND
+.SH OPTIONS
 .OP "start, restart, reload, force-reload"
 first stop the firewall, which flushes all the rules and drops all the firewall tables restoring the netfilter default (which is probably to allow all traffic), then start the firewall
 
@@ -35,7 +32,6 @@ stop the firewall restoring the netfilter default (which is probably to allow al
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall
 
-.SH OPTIONS
 .OP "-nft"
 the full path to nft, default /usr/sbin/nft
 
