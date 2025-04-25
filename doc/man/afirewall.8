@@ -1,4 +1,4 @@
-.TH man 8 "10 Jan 2025" "20240921.0.2" "afirewall man page"
+.TH man 8 "25 Apr 2025" "20240921.0.3" "afirewall man page"
 
 .SH NAME
 afirewall \- A pure NetFilter Firewall configured for Linux
@@ -17,10 +17,10 @@ afirewall uses netfilter to deny by default all inbound and outbound network tra
 The firewall's configuration file defaults to /etc/afirewall/afirewall.conf where individual services can be enabled.  The configuration file uses a syntax that is easy to read for human and also update / parse with Ansible.
 
 .PP
-Templates, for adding services that don't have a configuration shipped with the package, are in /usr/share/afirewall and are linked to /etc/afirewall for convenience.  Please suggest services you'd like added to the package by making a new issue on github: https://github.com/flattop5377/afirewall/issues
+Templates, for adding services that don't have a configuration shipped with the package, are in basedir/templates.  Distribution templates are in /usr/share/afirewall/templates.  Please suggest services you'd like added to the package by making a new issue on github.
 
 .PP
-Lists, such as spoofed networks, are in /usr/share/lists and are linked to /etc/afirewall for convenience.
+Lists, such as spoofed networks, are in /etc/afirewall/lists.  Distribution lists are in /usr/share/afirewall/lists.
 
 .SH OPTIONS
 .OP "start, restart, reload, force-reload"
@@ -44,15 +44,13 @@ destination used to find the external ipv4 address and device, default 8.8.8.8
 .OP "-ipv6dest"
 destination used to find the external ipv6 address and device, default 2001:4860:4860:0:0:0:0:8888
 
-.OP "-templates"
-path to the templates, default ./templates
-
-.OP "-c, --config"
-path to the configuration file, default /etc/afirewall/afirewall.conf
+.OP "-basedir"
+path to the configuration file, templates, lists, and output of nft, default /etc/afirewall
 
 .SH SEE ALSO
 
 .SH BUGS
+https://github.com/flattop5377/afirewall/issues
 
 .SH AUTHOR
 Flattop (flattop5377@proton.me)
