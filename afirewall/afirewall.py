@@ -214,6 +214,8 @@ def get_interfaces():
    return interfaces
 
 if __name__ == "__main__":
+   if os.geteuid() != 0: sys.exit('Root permissions required.')
+
    args = parse_arguments()
    config = get_configuration()
    interfaces = get_interfaces()
