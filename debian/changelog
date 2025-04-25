@@ -1,0 +1,24 @@
+afirewall (20240921.0.2-2) UNRELEASED; urgency=low
+
+  [ Flattop ]
+  * Updated manpage
+ 
+ -- Flattop5377 <flattop5377@proton.me>  Mon, 13 Jan 2025 13:20:30 -0600
+
+afirewall (20240921.0.2-1) UNRELEASED; urgency=low
+
+  [ Flattop ]
+  * Added a command line parameter for a configuration file, and a test for
+    that configuration file.  Changed the python script to use os.access to
+    test that the file is readable.  Closes: #2
+  * Changed the name of the python script from afirewall to afirewall.py so
+    it is a valid python module.  Package maintainers are adding in a symbolic
+    link so command-line usage remains afirewall.
+
+ -- Flattop5377 <flattop5377@proton.me>  Fri, 10 Jan 2025 13:20:36 -0600
+
+afirewall (20240921.0.1-1) UNRELEASED; urgency=low
+
+  * Initial release.
+
+ -- Flattop5377 <flattop5377@proton.me>  Tue, 24 Sep 2024 13:17:36 -0600

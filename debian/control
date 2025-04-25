@@ -1,0 +1,19 @@
+Source: afirewall
+Section: net
+Priority: optional
+Maintainer: Flattop5377 <flattop5377@proton.me>
+Build-Depends: debhelper-compat (= 13), dh-python, python3
+Standards-Version: 4.5.1
+Homepage: https://github.com/flattop5377/afirewall
+Rules-Requires-Root: no
+
+Package: afirewall
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${python3:Depends}, python3-jinja2, netfilter-persistent
+Description: Pure Netfilter Firewall configured for Linux
+ Pure firewall that uses nft only, is easily configured through 
+ Ansible, has some sane defaults for security, doesn't restrict
+ the full flexibility of other pure netfilter firewall
+ configuration, uses common or simple tools and formats, and
+ integrates nicely with existing networking architecture.
