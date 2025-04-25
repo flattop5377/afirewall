@@ -49,8 +49,8 @@ def test(template_directory, interface, config):
          sys.exit('NFT syntax validation failed on ' + interface.family.name + ': ' + nft_result.stderr)
       return nft_input
 
-def get_spoofed_networks(interface):
-   filename = 'lists/spoofed_' + interface.family.name + '_networks.list'
+def get_spoofed_networks(base_directory, interface):
+   filename = base_directory + '/lists/spoofed_' + interface.family.name + '_networks.list'
    local_network = interface.network
    spoofed_networks  = []
    if interface.family == Family.IPV4:
@@ -70,15 +70,15 @@ def get_spoofed_networks(interface):
                   spoofed_networks.append(list_network)
    return spoofed_networks
 
-def process_scripts(template_directory, interface, config):
+def process_scripts(base_directory, interface, config):
    env = Environment(
-      loader = FileSystemLoader(['template_directory', './templates'])
+      loader = FileSystemLoader([base_directory + '/templates', './templates'])
    )
 
    template_name = "{family}/base.rules".format(family=interface.family.name.lower());
-   output_name = interface.family.name.lower() + ".nft"
+   output_name = base_directory + "/" + interface.family.name.lower() + ".nft"
 
-   spoofed_networks = get_spoofed_networks(interface)
+   spoofed_networks = get_spoofed_networks(base_directory, interface)
 
    try:
       template = env.get_template(template_name)
@@ -149,8 +149,7 @@ def get_parser():
    parser.add_argument('-ip', help='full path to ip - default /usr/bin/ip', default='/usr/bin/ip')
    parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
    parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
-   parser.add_argument('-templates', help='path to the templates - default ./templates', default='./templates')
-   parser.add_argument('-c', '--config', help='path to the configuration file', default='/etc/afirewall/afirewall.conf')
+   parser.add_argument('-b', '--basedir', help='path to the base configuration directory - default /etc/afirewall', default='/etc/afirewall')
    return parser
 
 def parse_arguments():
@@ -167,7 +166,9 @@ def parse_arguments():
    pattern = re.compile('ip utility.*')
    if not pattern.match(ip_completed.stdout): sys.exit(args.ip + ' doesn\'t appear to be ip?')
 
-   if not os.access(args.config, mode=os.R_OK): sys.exit(args.config + ' can\'t be opened')
+   if not os.access(args.basedir, mode=os.R_OK): sys.exit('Base configuration directory ' + args.basedir + ' can\'t be opened')
+
+   if not os.access(args.basedir + '/afirewall.conf', mode=os.R_OK): sys.exit('Configuration file ' + args.basedir + '/afirewall.conf can\'t be opened')
 
    return args
 
@@ -186,7 +187,7 @@ def branch(tree, vector, value):
 
 def get_configuration():
    config = {}
-   with open(args.config, 'r') as file:
+   with open(args.basedir + '/afirewall.conf', 'r') as file:
       for line in file:
          li = re.sub('\s+', '', line)
          li = li.lower()
@@ -213,6 +214,8 @@ def get_interfaces():
    return interfaces
 
 if __name__ == "__main__":
+   if os.geteuid() != 0: sys.exit('Root permissions required.')
+
    args = parse_arguments()
    config = get_configuration()
    interfaces = get_interfaces()
@@ -221,9 +224,9 @@ if __name__ == "__main__":
       case 'start' | 'restart' | 'reload' | 'force-reload':
          stop()
          for interface in interfaces:
-            start(args.templates, interface, config)
+            start(args.basedir, interface, config)
       case 'stop' | 'flush':
          stop()
       case 'test':
          for interface in interfaces:
-            test(args.templates, interface, config)
+            test(args.basedir, interface, config)
