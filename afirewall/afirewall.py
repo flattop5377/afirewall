@@ -149,8 +149,8 @@ def get_parser():
    parser.add_argument('-ip', help='full path to ip - default /usr/bin/ip', default='/usr/bin/ip')
    parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
    parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
-   parser.add_argument('-templates', help='path to the templates - default ./templates', default='./templates')
-   parser.add_argument('-c', '--config', help='path to the configuration file', default='/etc/afirewall/afirewall.conf')
+   parser.add_argument('-templates', help='path to the templates - default /etc/afirewall/templates', default='/etc/afirewall/templates')
+   parser.add_argument('-c', '--config', help='path to the configuration file - default /etc/afirewall/afirewall.conf', default='/etc/afirewall/afirewall.conf')
    return parser
 
 def parse_arguments():
