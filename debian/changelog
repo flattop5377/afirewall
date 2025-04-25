@@ -13,7 +13,7 @@ afirewall (20240921.0.3-1) UNRELEASED; urgency=low
   * Install the afirewall.py script into /usr/sbin.  Closes: 4
   * Copy the templates and lists to /etc/afirewall.
 
- -- Flattop5377 <flattop5377@proton.me> Fri, 25 Apr 2025 16:45:22 -0600
+ -- Flattop5377 <flattop5377@proton.me>  Fri, 25 Apr 2025 16:45:22 -0600
 
 afirewall (20240921.0.2-2) UNRELEASED; urgency=low
 
