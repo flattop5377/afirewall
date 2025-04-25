@@ -1,7 +1,8 @@
 afirewall (20240921.0.3-1) UNRELEASED; urgency=low
 
   [ Flattop ]
-  * Created a Debian Package Repository on github: https://github.com/flattop5377/debrepo
+  * Created a Debian Package Repository on github: 
+      https://github.com/flattop5377/debrepo
   * Removed -c and --config.  Use -b or --basedir.  Closes: 3
   * Removed -template.  Use -b or --basedir.
   * Fixed to find lists under --basedir.
