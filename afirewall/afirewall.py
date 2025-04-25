@@ -76,7 +76,7 @@ def process_scripts(base_directory, interface, config):
    )
 
    template_name = "{family}/base.rules".format(family=interface.family.name.lower());
-   output_name = interface.family.name.lower() + ".nft"
+   output_name = base_directory + "/" + interface.family.name.lower() + ".nft"
 
    spoofed_networks = get_spoofed_networks(base_directory, interface)
 
