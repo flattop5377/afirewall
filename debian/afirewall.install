@@ -1,4 +1,4 @@
 afirewall.conf etc/afirewall
-afirewall/afirewall.py usr/share/afirewall
-lists usr/share/afirewall
-templates usr/share/afirewall
+afirewall/afirewall.py usr/sbin/afirewall
+lists etc/afirewall
+templates etc/afirewall
