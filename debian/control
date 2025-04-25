@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Flattop5377 <flattop5377@proton.me>
 Build-Depends: debhelper-compat (= 13), dh-python, python3, pybuild-plugin-pyproject, python3-hatchling
-Standards-Version: 4.5.1
+Standards-Version: 4.6.2
 Homepage: https://github.com/flattop5377/afirewall
 Rules-Requires-Root: no
 
