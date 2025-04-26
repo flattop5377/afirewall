@@ -1,3 +1,28 @@
+afirewall (20240921.0.3-2) UNRELEASED; urgency=low
+
+  [ Flattop ]
+  * Fixed packaging error so afirewall is placed in /usr/sbin/afirewall
+
+ -- Flattop5377 <flattop5377@proton.me>  Fri, 25 Apr 2025 18:30:48 -0600
+
+afirewall (20240921.0.3-1) UNRELEASED; urgency=low
+
+  [ Flattop ]
+  * Created a Debian Package Repository on github: 
+      https://github.com/flattop5377/debrepo
+  * Removed -c and --config.  Use -b or --basedir.  Closes: 3
+  * Removed -template.  Use -b or --basedir.
+  * Fixed to find lists under --basedir.
+  * Fixed to find templates under --basedir.
+  * Fixed to write working nft configuration to --basedir.  Closes: 8
+  * Updated man page with --basedir.
+  * Made the source repository public.  Closes: 5
+  * Requires a check for root permissions.  Closes: 6
+  * Install the afirewall.py script into /usr/sbin.  Closes: 4
+  * Copy the templates and lists to /etc/afirewall.
+
+ -- Flattop5377 <flattop5377@proton.me>  Fri, 25 Apr 2025 16:45:22 -0600
+
 afirewall (20240921.0.2-2) UNRELEASED; urgency=low
 
   [ Flattop ]
