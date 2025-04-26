@@ -1,4 +1,4 @@
-afirewall (20240921.0.3-1) UNRELEASED; urgency=low
+afirewall (20240921.0.3-2) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Fixed packaging error so afirewall is placed in /usr/sbin/afirewall
