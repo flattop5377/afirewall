@@ -1,4 +1,5 @@
+#! /usr/bin/dh-exec
 afirewall.conf etc/afirewall
-afirewall/afirewall.py usr/sbin/afirewall
+afirewall/afirewall.py => /usr/sbin/afirewall
 lists etc/afirewall
 templates etc/afirewall
