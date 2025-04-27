@@ -40,7 +40,7 @@ ICMP Counters:
   * table ip a-firewall-outbound-ipv4
     * NUMBER_OF_INVALID_FLAGS_DROPPED
 
-To show inbound NUMBHER_OF_SPOOFS_DROPPED
+To show inbound NUMBER_OF_SPOOFS_DROPPED
 
 ```
 $ sudo nftp list counter counter ip a-firewall-inbound-ipv4 NUMBER_OF_SPOOFS_DROPPED
