@@ -1,6 +1,5 @@
 ---
-layout: page
-title: A Pure Netfilter Firewall
+layout: home
 ---
 
 # A Pure Netfilter Firewall
