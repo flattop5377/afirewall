@@ -1,11 +1,11 @@
 # A pure Netfilter Firewall on Linux
+## Website
+[afirewall](https://flattop5377.github.io/afirewall/)
 ## Goals
    - Be resonably secure
    - Be easy to install, configure, and maintain
    - Be Ansible friendly
    - Use common tools and formats
-## Installation
-### Ansible
 ## Developer instructions
 ### Python environment setup
 ```
