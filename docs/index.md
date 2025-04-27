@@ -4,7 +4,8 @@
 
 [Open Issues](https://github.com/flattop5377/afirewall/issues)
 
-* Table of Contents {:toc}
+* Table of Contents
+{:toc}
 
 ## What is it?
 
