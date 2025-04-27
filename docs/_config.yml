@@ -29,12 +29,9 @@ url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username: flattop5377
 
 # Build settings
-remote_theme: "jekyll/minima@c6e74bb"
+#remote_theme: "jekyll/minima@c6e74bb"
 plugins:
   - jekyll-feed
-
-minima:
-  skin: solarized-dark
 
 # Exclude from processing.
 # The following items will not be processed, by default.
