@@ -221,7 +221,7 @@ if __name__ == "__main__":
    interfaces = get_interfaces()
 
    match args.command:
-      case 'start' | 'restart' | 'reload' | 'force-reload':
+      case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':
          stop()
          for interface in interfaces:
             start(args.basedir, interface, config)
