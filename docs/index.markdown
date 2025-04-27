@@ -1,11 +1,15 @@
+---
+# Feel free to add content and custom Front Matter to this file.
+# To modify the layout, see https://jekyllrb.com/docs/themes/#overriding-theme-defaults
+
+layout: home
+---
+
 # A Pure Netfilter Firewall
 
 *** Status: Pre-Alpha - Under Development ***
 
 [Open Issues](https://github.com/flattop5377/afirewall/issues)
-
-* Table of Contents
-{:toc}
 
 ## What is it?
 
@@ -45,3 +49,4 @@ A special thank you to:
     * [sigxcpu.org](https://honk.sigxcpu.org/piki/development/debian_packages_in_git/)
     * [eyrie.org](https://www.eyrie.org/~eagle/notes/debian/git.html)
     * [debian.org](https://www.debian.org/doc/manuals/debmake-doc/index.en.html)
+
