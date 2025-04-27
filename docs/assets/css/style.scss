@@ -1,6 +1,8 @@
 ---
 ---
 
+@import "{{ site.theme }}";
+
 // Adding 'Contents' headline to the TOC
 #markdown-toc::before {
     content: "Contents";
