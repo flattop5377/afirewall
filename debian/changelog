@@ -1,3 +1,13 @@
+afirewall (20240921.0.4-1) UNRELEASED; urgency=low
+
+  [ Flattop ]
+  * Added rules for IPV4 tor and btc. Closes: 16, 18
+  * Added save command so rules can be persisted as a netfilter plugin.
+    Closes:  20
+  * Added a package dependency on netfilter. Closes: 17
+
+ -- Flattop5377 <flattop5377@proton.me>  Mon, 28 Apr 2025 12:43:56 -0600
+
 afirewall (20240921.0.3-2) UNRELEASED; urgency=low
 
   [ Flattop ]
