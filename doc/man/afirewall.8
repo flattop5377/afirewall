@@ -1,7 +1,7 @@
 .TH man 8 "25 Apr 2025" "20240921.0.3" "afirewall man page"
 
 .SH NAME
-afirewall \- A pure NetFilter Firewall configured for Linux
+afirewall \- A pure NetFilter Firewall wrapper for Linux
 
 .SH SYNOPSIS
 .B
@@ -23,7 +23,7 @@ Templates, for adding services that don't have a configuration shipped with the 
 Lists, such as spoofed networks, are in /etc/afirewall/lists.  Distribution lists are in /usr/share/afirewall/lists.
 
 .SH OPTIONS
-.OP "start, restart, reload, force-reload"
+.OP "start, restart, reload, force-reload, save"
 first stop the firewall, which flushes all the rules and drops all the firewall tables restoring the netfilter default (which is probably to allow all traffic), then start the firewall
 
 .OP "stop, flush"
