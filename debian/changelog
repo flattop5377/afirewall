@@ -1,30 +1,18 @@
-afirewall (20240921.0.5) UNRELEASED; urgency=low
-
-  [ Flattop ]
-  * Fixed persistence across reboots.  Closes: 20
-
- -- Flattop5377 <flattop5377@proton.me>  Mon, 28 Apr 2025 17:21:43 -0600
-
-afirewall (20240921.0.4-1) UNRELEASED; urgency=low
+afirewall (20240921.0.4) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Added rules for IPV4 tor and btc. Closes: 16, 18
+  * Fixed persistence across reboots.  Closes: 20
   * Added save command so rules can be persisted as a netfilter plugin.
     Closes:  20
   * Added a package dependency on netfilter. Closes: 17
 
  -- Flattop5377 <flattop5377@proton.me>  Mon, 28 Apr 2025 12:43:56 -0600
 
-afirewall (20240921.0.3-2) UNRELEASED; urgency=low
+afirewall (20240921.0.3) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Fixed packaging error so afirewall is placed in /usr/sbin/afirewall
-
- -- Flattop5377 <flattop5377@proton.me>  Fri, 25 Apr 2025 18:30:48 -0600
-
-afirewall (20240921.0.3-1) UNRELEASED; urgency=low
-
-  [ Flattop ]
   * Created a Debian Package Repository on github: 
       https://github.com/flattop5377/debrepo
   * Removed -c and --config.  Use -b or --basedir.  Closes: 3
@@ -40,16 +28,10 @@ afirewall (20240921.0.3-1) UNRELEASED; urgency=low
 
  -- Flattop5377 <flattop5377@proton.me>  Fri, 25 Apr 2025 16:45:22 -0600
 
-afirewall (20240921.0.2-2) UNRELEASED; urgency=low
+afirewall (20240921.0.2) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Updated manpage
- 
- -- Flattop5377 <flattop5377@proton.me>  Mon, 13 Jan 2025 13:20:30 -0600
-
-afirewall (20240921.0.2-1) UNRELEASED; urgency=low
-
-  [ Flattop ]
   * Added a command line parameter for a configuration file, and a test for
     that configuration file.  Changed the python script to use os.access to
     test that the file is readable.  Closes: #2
@@ -59,7 +41,7 @@ afirewall (20240921.0.2-1) UNRELEASED; urgency=low
 
  -- Flattop5377 <flattop5377@proton.me>  Fri, 10 Jan 2025 13:20:36 -0600
 
-afirewall (20240921.0.1-1) UNRELEASED; urgency=low
+afirewall (20240921.0.1) UNRELEASED; urgency=low
 
   * Initial release.
 
