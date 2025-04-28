@@ -1,4 +1,4 @@
-afirewall (20240921.0.4-2) UNRELEASED; urgency=low
+afirewall (20240921.0.5) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Fixed persistence across reboots.  Closes: 20
