@@ -5,8 +5,6 @@ email: Flattop5377@proton.me
 description: >
   A wrapper for a pure netfilter without iptables firewall that is easy to
   install and maintain with Ansible.
-baseurl: ""
-url: ""
 github_username: Flattop5377
 rss: rss
 
