@@ -1,5 +1,7 @@
 generated/
 *.swp
+ipv4.nft
+ipv6.nft
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
