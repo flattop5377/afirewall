@@ -35,6 +35,8 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.baculastoragedaemon %}{% include 'ipv4/inbound/baculastoragedaemon.rules' %}{% endif %}
 {% if inbound.bitcoin %}{% include 'ipv4/inbound/bitcoin.rules' %}{% endif %}
 {% if inbound.udp1514 %}{% include 'ipv4/inbound/udp1514.rules' %}{% endif %}
+{% if inbound.tor %}{% include 'ipv4/inbound/tor.rules' %}{% endif %}
+{% if inbound.btc %}{% include 'ipv4/inbound/btc.rules' %}{% endif %}
 
 
   #############################################################################
@@ -61,6 +63,9 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
 {% if inbound.udp1514 %}    udp dport 1514 jump ACCEPT_UDP1514{% endif %}
+{% if inbound.tor %}    tcp dport 9001 jump ACCEPT_TOR{% endif %}
+{% if inbound.tor %}    tcp dport 9030 jump ACCEPT_TOR{% endif %}
+{% if inbound.btc %}    tcp dport 8333 jump ACCEPT_TOR{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -75,6 +80,8 @@ table ip a-firewall-inbound-ipv4 {
 {% if outbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
 {% if outbound.udp2514 %}    udp sport 2514 ct state established accept{% endif %}
 {% if outbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
+{% if outbound.tor %}    meta skuid debian-tor ct state established accept{% endif %}
+{% if outbound.btc %}    meta skuid btc ct state established accept{% endif %}
 
     ip protocol icmp jump VALID_ICMP
   }
@@ -280,6 +287,8 @@ table ip a-firewall-outbound-ipv4 {
 {% if outbound.baculastoragedaemon %}{% include 'ipv4/outbound/baculastoragedaemon.rules' %}{% endif %}
 {% if outbound.udp1514 %}{% include 'ipv4/outbound/udp1514.rules' %}{% endif %}
 {% if outbound.ssh %}{% include 'ipv4/outbound/ssh.rules' %}{% endif %}
+{% if outbound.tor %}{% include 'ipv4/outbound/tor.rules' %}{% endif %}
+{% if outbound.btc %}{% include 'ipv4/outbound/btc.rules' %}{% endif %}
 
   #############################################################################
   #
@@ -302,6 +311,9 @@ table ip a-firewall-outbound-ipv4 {
 {% if inbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
 {% if inbound.udp1514 %}    udp sport 1514 ct state established accept{% endif %}
+{% if inbound.tor %}    tcp sport 9001 ct state established accept{% endif %}
+{% if inbound.tor %}    tcp sport 9030 ct state established accept{% endif %}
+{% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
 {% if outbound.dhcp %}    udp dport 53 jump ACCEPT_DNS{% endif %}
@@ -315,6 +327,8 @@ table ip a-firewall-outbound-ipv4 {
 {% if outbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
 {% if outbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
 {% if outbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
+{% if outbound.tor %}    meta skuid debian-tor jump ACCEPT_TOR{% endif %}
+{% if outbound.btc %}    meta skuid btc jump ACCEPT_TOR{% endif %}
 
     ip protocol icmp jump VALID_ICMP
   }
