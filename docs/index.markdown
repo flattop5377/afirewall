@@ -2,8 +2,6 @@
 layout: home
 ---
 
-# A Pure Netfilter Firewall
-
 *** Status: Pre-Alpha - Under Development ***
 
 [Open Issues](https://github.com/flattop5377/afirewall/issues)
