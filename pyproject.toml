@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "afirewall"
-version = "20240921.0.3"
+version = "20240921.0.4"
 readme = "DESCRIPTION.txt"
 license = {file = "LICENSE-SHORT.txt"}
 requires-python = ">=3.9"
@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/flattop5377/afirewall"
+Homepage = "https://flattop5377.github.io/afirewall/"
 
 [project.scripts]
 afirewall = "afirewall:main"
