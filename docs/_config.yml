@@ -1,5 +1,4 @@
 remote_theme: "jekyll/minima@c6e74bb"
 
-minima:
-  nav_pages:
-    - about.markdown
+header_pages:
+  - about.markdown
