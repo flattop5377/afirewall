@@ -1,5 +1,6 @@
 ---
 layout: home
+title: A Pure Netfilter Firewall Wrapper
 ---
 
 *** Status: Pre-Alpha - Under Development ***
