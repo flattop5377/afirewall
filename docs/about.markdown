@@ -1,5 +1,7 @@
 ---
 layout: page
+title: About
+permalink: /about/
 ---
 
 I needed a pure netfilter firewall without iptables that I could configure easily with Ansible.
