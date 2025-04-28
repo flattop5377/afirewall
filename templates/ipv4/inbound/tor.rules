@@ -1,0 +1,36 @@
+  #############################################################################
+  #
+  ## TOR Rules
+  #
+  #############################################################################
+
+  ##
+  # TOR connection rate limit
+  #
+  set tor_rate_limit {
+    type ipv4_addr
+    size 65535
+    timeout 90s
+    flags dynamic
+  }
+
+  ##
+  # TOR number of connections per source IP limit
+  #
+  set tor_connection_limit {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+
+  chain ACCEPT_TOR {
+    ct state new tcp dport 9001 update @tor_rate_limit { ip saddr limit rate 50/minute } continue
+    ct state new tcp dport 9001 add @tor_connection_limit { ip saddr ct count over 200 } continue
+    ct state new,established tcp dport 9001 accept
+
+    ct state new tcp dport 9030 update @tor_rate_limit { ip saddr limit rate 50/minute } continue
+    ct state new tcp dport 9030 add @tor_connection_limit { ip saddr ct count over 200 } continue
+    ct state new,established tcp dport 9030 accept
+  }
+
