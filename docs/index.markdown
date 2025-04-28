@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: home
 ---
 
 # A Pure Netfilter Firewall
