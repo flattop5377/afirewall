@@ -4,6 +4,7 @@ from ipaddress import ip_address, ip_network
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 import argparse
+import glob
 import os
 import re
 import shutil
@@ -37,8 +38,7 @@ def stop():
    subprocess.run(args=[args.nft, 'delete', 'table', 'ip6', 'a-firewall-inbound-ipv6'], capture_output=True, encoding='UTF-8')
    subprocess.run(args=[args.nft, 'delete', 'table', 'ip6', 'a-firewall-outbound-ipv6'], capture_output=True, encoding='UTF-8')
 
-def start(template_directory, interface, config):
-   nft_input = test(template_directory, interface, config)
+def start(nft_input):
    nft_result = subprocess.run(args=[args.nft, '-f', nft_input], capture_output=True, encoding='UTF-8')
 
 def test(template_directory, interface, config):
@@ -129,7 +129,10 @@ def get_external_ipv4_interface(destination):
    address = get_external_interface_address_or_device(destination, IPV4_ADDRESS_REGEX_PATTERN)
    device = get_external_interface_address_or_device(destination, IPV4_DEVICE_REGEX_PATTERN)
    network = get_external_ipv4_network(device)
-   interface = Interface(address, network, device, Family.IPV4)
+   try:
+     interface = Interface(address, network, device, Family.IPV4)
+   except ValueError:
+     interface = None
    return interface
 
 def get_external_ipv6_interface(destination):
@@ -202,14 +205,12 @@ def get_interfaces():
    if interface != None:
       interfaces.append(interface)
    else:
-      print('Warning: no IPv4 interface found.  No firewall will be started for IPv4')
-      print('There was no valid route to ' + args.ipv4dest)
+      print('Warning: no IPv4 interface found. There was no valid route to ' + args.ipv4dest)
    interface = get_external_ipv6_interface(args.ipv6dest)
    if interface != None:
       interfaces.append(interface)
    else:
-      print('Warning: no IPv6 interface found.  No firewall will be started for IPv6')
-      print('There was no valid route to ' + args.ipv6dest)
+      print('Warning: no IPv6 interface found. There was no valid route to ' + args.ipv6dest)
 
    return interfaces
 
@@ -224,7 +225,10 @@ if __name__ == "__main__":
       case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':
          stop()
          for interface in interfaces:
-            start(args.basedir, interface, config)
+            nft_input = test(args.basedir, interface, config)
+         for file in glob.glob(args.basedir + '/ipv[4|6].nft'):
+             print('Loading rules from ' + file)
+             start(file)
       case 'stop' | 'flush':
          stop()
       case 'test':
