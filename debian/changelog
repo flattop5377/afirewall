@@ -1,3 +1,12 @@
+afirewall (20250429.0.0) unstable; urgency=low
+
+  [ Flattop ]
+  * Created IPV6 rules to match all IPV4 rules. Closes: 24
+  * Moved from Pre-Alpha to Alpha. Ready for testing on 
+    non-production systems.
+
+ -- Flattop5377 <flattop5377@proton.me>  Tue, 29 Apr 2025 12:18:12 -0600
+
 afirewall (20240921.0.5) UNRELEASED; urgency=low
 
   [ Flattop ]
