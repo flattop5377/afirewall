@@ -1,6 +1,0 @@
-082b6a2c55ec82d03783c50f7793b289  usr/sbin/afirewall
-93caa57942cc7d9f23039cc4ca9c36a5  usr/share/doc/afirewall/README.Debian
-c91224613a9a15ca367eb93cec52ab74  usr/share/doc/afirewall/changelog.gz
-5a52bb2775a0f2b6af0e1dd1256994f5  usr/share/doc/afirewall/copyright
-d41d8cd98f00b204e9800998ecf8427e  usr/share/lintian/overrides/afirewall
-7b8aae1f0fb2b0156d4784158c9c3fd0  usr/share/man/man8/afirewall.8.gz
