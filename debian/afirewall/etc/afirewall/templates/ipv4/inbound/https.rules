@@ -1,0 +1,32 @@
+  #############################################################################
+  #
+  ## HTTPS Rules
+  #
+  #############################################################################
+
+  ##
+  # HTTPS connection rate limit
+  #
+  set https_rate_limit {
+    type ipv4_addr
+    size 65535
+    timeout 90s
+    flags dynamic
+  }
+
+  ##
+  # HTTPS number of connections per source IP limit
+  #
+  set https_connection_limit {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+
+  chain ACCEPT_HTTPS {
+    ct state new tcp dport 443 update @https_rate_limit { ip saddr limit rate 50/minute } continue
+    ct state new tcp dport 443 add @https_connection_limit { ip saddr ct count over 200 } continue
+    ct state new,established tcp dport 443 accept
+  }
+
