@@ -168,6 +168,22 @@ class TestAfirewall(unittest.TestCase):
                 self.assertIn(target, defined,
                               family + ' jumps to ' + target + ', which no chain defines')
 
+    def testEveryServiceJumpsIntoItsOwnChain(self):
+        """A jump to some *other* service's chain, which the jump-target check above cannot
+        see because that chain does exist. btc jumped into ACCEPT_TOR in both directions and
+        both families: skuid btc never matches skuid debian-tor, so bitcoind fell through to
+        the drop policy and ACCEPT_BTC was never reached. Enabled together they rendered,
+        loaded, and silently firewalled bitcoind off in both directions.
+
+        Read from the guard rather than the port, because the guard is what the operator
+        switched on and the chain is what they expect it to reach."""
+        wired = re.compile(r'\{% if (?:inbound|outbound)\.([a-z0-9]+) %\}.*?jump (ACCEPT_\w+)')
+        for family in FAMILIES:
+            source = open('templates/' + family + '/base.rules').read()
+            for service, chain in wired.findall(source):
+                self.assertEqual('ACCEPT_' + service.upper(), chain,
+                                 family + ': ' + service + ' jumps into ' + chain)
+
     def testIndentationStaysEvenAndTabFree(self):
         """nft does not care, but a mix of tabs and spaces is how a template stops being
         diffable against the ruleset nft prints back."""
