@@ -19,6 +19,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.udp1514 %}{% include 'ipv6/inbound/udp1514.rules' %}{% endif %}
 {% if inbound.tor %}{% include 'ipv6/inbound/tor.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
+{% if inbound.wireguard %}{% include 'ipv6/inbound/wireguard.rules' %}{% endif %}
 
 
   #############################################################################
@@ -48,6 +49,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.tor %}    tcp dport 9001 jump ACCEPT_TOR{% endif %}
 {% if inbound.tor %}    tcp dport 9030 jump ACCEPT_TOR{% endif %}
 {% if inbound.btc %}    tcp dport 8333 jump ACCEPT_TOR{% endif %}
+{% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -64,6 +66,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if outbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
 {% if outbound.tor %}    meta skuid debian-tor ct state established accept{% endif %}
 {% if outbound.btc %}    meta skuid btc ct state established accept{% endif %}
+{% if outbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 
     meta l4proto ipv6-icmp jump VALID_ICMP
 
@@ -133,12 +136,13 @@ table ip6 a-firewall-inbound-ipv6 {
     ##
     # Qualified by the external device - see the ipv4 template for why.
     #
-    # `ip6 saddr`, not `ip saddr`: this is an ip6 table and the ipv4 selector does not parse
-    # there. It has never been caught because it has never rendered - there is no
-    # lists/spoofed_IPV6_networks.list, and get_spoofed_networks() guards its open() with
-    # `if interface.family == Family.IPV4`, so ipv6 gets an empty list and this loop emits
-    # nothing. THIS CHAIN IS CURRENTLY A NO-OP: ipv6 has no anti-spoofing whatsoever, and the
-    # day a list is added is the day the bad selector would have taken the table down with it.
+    # `ip6 saddr`, not `ip saddr`: this is an ip6 table, where the ipv4 selector is a parse
+    # error and not a rule that quietly matches nothing. It survived as long as it did only
+    # because it never rendered - there was no lists/spoofed_IPV6_networks.list and
+    # get_spoofed_networks() opened one for IPv4 alone, so this loop emitted no rows at all
+    # and ipv6 had no anti-spoofing while appearing to. Both are fixed. The list is chosen
+    # from IANA's own "Globally Reachable" column, and names the two entries it leaves out -
+    # link-local and unspecified - because dropping either breaks neighbour discovery.
 {% for network in SPOOFED_NETWORKS %}    iifname {{ EXTERNAL_DEVICE }} ip6 saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
 {% endfor %}
   }
@@ -274,6 +278,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ssh %}{% include 'ipv6/outbound/ssh.rules' %}{% endif %}
 {% if outbound.tor %}{% include 'ipv6/outbound/tor.rules' %}{% endif %}
 {% if outbound.btc %}{% include 'ipv6/outbound/btc.rules' %}{% endif %}
+{% if outbound.wireguard %}{% include 'ipv6/outbound/wireguard.rules' %}{% endif %}
 
   #############################################################################
   #
@@ -299,6 +304,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if inbound.tor %}    tcp sport 9001 ct state established accept{% endif %}
 {% if inbound.tor %}    tcp sport 9030 ct state established accept{% endif %}
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
+{% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
 {% if outbound.dhcp %}    udp dport 53 jump ACCEPT_DNS{% endif %}
@@ -314,6 +320,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
 {% if outbound.tor %}    meta skuid debian-tor jump ACCEPT_TOR{% endif %}
 {% if outbound.btc %}    meta skuid btc jump ACCEPT_TOR{% endif %}
+{% if outbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
 
     meta l4proto ipv6-icmp jump VALID_ICMP
 
