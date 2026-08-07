@@ -2,7 +2,31 @@
   #
   ## Outbound TOR Rules
   #
+  # `skuid` decides WHETHER tor may reach the internet. These decide how much of it.
+  #
+  # Without them the grant is unbounded, and a daemon that has been taken over inherits an
+  # unmetered exit to anywhere - which is most of the value in taking over a daemon that is
+  # allowed out at all. The limits are deliberately generous: this is a bound on the blast
+  # radius, not a tuning knob, and a relay legitimately holds thousands of connections open.
+  #
+  # `over ... drop` rather than `... continue`. A limit whose rule carries no verdict is
+  # counted and then ignored: when it fails to match, evaluation simply moves to the next
+  # rule, and the next rule here accepts unconditionally.
+  #
   #############################################################################
+
+  ##
+  # Concurrent outbound connections, per user
+  #
+  set tor_outbound_connection_limit {
+    typeof meta skuid
+    size 65535
+    flags dynamic
+  }
+
   chain ACCEPT_TOR {
+    ct state new meta skuid debian-tor add @tor_outbound_connection_limit { meta skuid ct count over 4000 } drop
+    ct state new meta skuid debian-tor limit rate over 200/second drop
     ct state new,established meta skuid debian-tor accept
   }
+

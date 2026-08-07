@@ -208,6 +208,50 @@ class TestAfirewall(unittest.TestCase):
                 self.assertIn(target, defined,
                               family + ' jumps to ' + target + ', which no chain defines')
 
+    def testEveryIncludeResolvesToAFileThatExists(self):
+        """An include naming a file that is not there costs nothing until the key guarding it
+        is switched on - and then raises TemplateNotFound at the moment somebody is trying to
+        bring a firewall up. base.rules carried three of them (orport, dirport, bitcoin, the
+        last a near-miss for btc.rules), each unreachable only because no config key set it."""
+        for family in FAMILIES:
+            source = open('templates/' + family + '/base.rules').read()
+            included = re.findall(r"\{% include '([^']+)' %\}", source)
+            self.assertTrue(included, family + '/base.rules includes nothing at all')
+            for path in included:
+                self.assertTrue(os.path.isfile('templates/' + path),
+                                family + '/base.rules includes ' + path + ', which is not there')
+                self.assertTrue(path.startswith(family + '/'),
+                                family + '/base.rules includes ' + path + ' from another family')
+
+    def testEveryServiceTemplateIsReachable(self):
+        """The other direction: a template nothing includes is a rule set nobody can turn on,
+        which reads as coverage while providing none."""
+        for family in FAMILIES:
+            source = open('templates/' + family + '/base.rules').read()
+            included = set(re.findall(r"\{% include '([^']+)' %\}", source))
+            for side in ('inbound', 'outbound'):
+                directory = 'templates/{family}/{side}'.format(family=family, side=side)
+                for name in sorted(os.listdir(directory)):
+                    if not name.endswith('.rules'):
+                        continue
+                    path = '{family}/{side}/{name}'.format(family=family, side=side, name=name)
+                    self.assertIn(path, included, path + ' exists but nothing includes it')
+
+    def testOutboundLimitsCarryTheirOwnVerdict(self):
+        """A limit rule ending in `continue` counts and refuses nothing. When the match fails
+        evaluation moves to the next rule, and the next rule accepts unconditionally - so the
+        limit is only ever a counter. `over ... drop` is what actually turns traffic away."""
+        for family in FAMILIES:
+            for service in ('tor', 'btc'):
+                path = 'templates/{f}/outbound/{s}.rules'.format(f=family, s=service)
+                source = open(path).read()
+                self.assertIn('ct count over', source, path + ' bounds no concurrency')
+                self.assertIn('limit rate over', source, path + ' bounds no rate')
+                for line in source.splitlines():
+                    if 'ct count over' in line or 'limit rate over' in line:
+                        self.assertTrue(line.rstrip().endswith('drop'),
+                                        path + ': limit without a verdict -> ' + line.strip())
+
     def testEveryServiceJumpsIntoItsOwnChain(self):
         """A jump to some *other* service's chain, which the jump-target check above cannot
         see because that chain does exist. btc jumped into ACCEPT_TOR in both directions and

@@ -33,7 +33,7 @@ class Family(Enum):
    IPV6 = 2
    LO = 3
 
-IPV4_ADDRESS_REGEX_PATTERN = '.*src ([0-9\.]+) .*'
+IPV4_ADDRESS_REGEX_PATTERN = r'.*src ([0-9\.]+) .*'
 IPV4_DEVICE_REGEX_PATTERN = '.*dev ([0-9a-zA-Z]+) .*'
 IPV6_ADDRESS_REGEX_PATTERN = '.*src ([0-9a-f:]+) .*'
 IPV6_DEVICE_REGEX_PATTERN = '.*dev ([0-9a-f:]+) .*'
@@ -128,7 +128,7 @@ def get_external_interface_address_or_device(destination, regex):
 def get_external_ipv4_network(device):
    try:
       ip_ad_show = subprocess.run(args=[args.ip, '-o', '-f', 'inet', 'ad', 'show', device], capture_output=True, encoding='UTF-8')
-      match = re.search('.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
+      match = re.search(r'.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
       if match is None: sys.exit('Failed to find local IPV4 network in: ' + ip_ad_show.stdout)
       return match.group(1)
    except TypeError:
@@ -137,7 +137,7 @@ def get_external_ipv4_network(device):
 def get_external_ipv6_network(device):
    try:
       ip_ad_show = subprocess.run(args=[args.ip, '-o', '-f', 'inet6', 'ad', 'show', device], capture_output=True, encoding='UTF-8')
-      match = re.search('.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
+      match = re.search(r'.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
       if match is None: sys.exit('Failed to find local IPV4 network in: ' + ip_ad_show.stdout)
       return match.group(1)
    except TypeError:
@@ -210,7 +210,7 @@ def get_configuration():
    config = {}
    with open(args.basedir + '/afirewall.conf', 'r') as file:
       for line in file:
-         li = re.sub('\s+', '', line)
+         li = re.sub(r'\s+', '', line)
          li = li.lower()
          if not li.startswith('#') and li.find(':') != -1:
             kv = li.split(':')
@@ -230,9 +230,15 @@ def users_a_service_matches(base_directory, service):
             base=base_directory, family=family, side=side, service=service)
          try:
             with open(path) as file:
-               users.update(re.findall(r'meta skuid (\S+)', file.read()))
+               text = file.read()
          except OSError:
             continue
+         # Brace-delimited expressions are dropped first. `meta skuid` names a user where it
+         # is matched against one, and names the *key* of a set where it appears inside { } -
+         # as in `add @s { meta skuid ct count over 500 }`, which otherwise reads 'ct' as a
+         # user and disables the service for want of an account nobody meant to create. Set
+         # bodies go the same way: `{ typeof meta skuid ... }` would otherwise yield 'size'.
+         users.update(re.findall(r'meta skuid (\S+)', re.sub(r'\{[^{}]*\}', ' ', text)))
    return users
 
 def disable_services_missing_their_users(base_directory, config):
