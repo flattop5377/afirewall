@@ -6,10 +6,16 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 import argparse
 import glob
 import os
+import pwd
 import re
 import shutil
 import subprocess
 import sys
+
+def warn(message):
+   """To stderr, so a warning survives having stdout piped somewhere and still reads in
+   order beside the errors it sits between."""
+   print('Warning: ' + message, file=sys.stderr)
 
 class Interface(object):
    def __init__(self, address, network, device, family):
@@ -39,7 +45,14 @@ def stop():
    subprocess.run(args=[args.nft, 'delete', 'table', 'ip6', 'a-firewall-outbound-ipv6'], capture_output=True, encoding='UTF-8')
 
 def start(nft_input):
+   """Load a ruleset, and say so when it does not load.
+
+   The return code used to go unread and stderr was captured and thrown away, so a load that
+   failed printed 'Loading rules from ...' and exited 0 with the host unprotected. A firewall
+   that cannot say whether it is running is worse than one that is plainly off."""
    nft_result = subprocess.run(args=[args.nft, '-f', nft_input], capture_output=True, encoding='UTF-8')
+   if nft_result.returncode != 0:
+      sys.exit('Failed to load ' + nft_input + ': ' + nft_result.stderr.strip())
 
 def test(template_directory, interface, config):
    nft_input = process_scripts(template_directory, interface, config)
@@ -204,6 +217,50 @@ def get_configuration():
             config = branch(config, kv[0].split('.'), kv[1])
    return config
 
+def users_a_service_matches(base_directory, service):
+   """Which system users a service's rules match on, read out of the rules themselves.
+
+   Read rather than declared, so nothing has to keep a second list of who needs whom in step
+   with the templates. A service that matches no user - which is nearly all of them - yields
+   nothing and is never in question."""
+   users = set()
+   for family in ('ipv4', 'ipv6'):
+      for side in ('inbound', 'outbound'):
+         path = '{base}/templates/{family}/{side}/{service}.rules'.format(
+            base=base_directory, family=family, side=side, service=service)
+         try:
+            with open(path) as file:
+               users.update(re.findall(r'meta skuid (\S+)', file.read()))
+         except OSError:
+            continue
+   return users
+
+def disable_services_missing_their_users(base_directory, config):
+   """Switch off any service whose skuid user does not exist on this host.
+
+   `meta skuid nosuchuser` is not a rule that matches nothing. nft refuses to load the table
+   that contains it, so one absent user costs the host every rule in that family - it ends up
+   with no firewall rather than one service short. Enabling tor on a box without tor installed
+   is an ordinary mistake and should not be able to do that.
+
+   Switched off here rather than refused, because the alternative to a firewall missing one
+   service is no firewall at all, and that is not the safer of the two."""
+   for section in ('inbound', 'outbound'):
+      for service, enabled in sorted(config.get(section, {}).items()):
+         if not enabled:
+            continue
+         for user in sorted(users_a_service_matches(base_directory, service)):
+            try:
+               pwd.getpwnam(user)
+            except KeyError:
+               warn('{section}.{service} is enabled but the user it matches on ({user}) does '
+                    'not exist here - disabling it, because the rule would otherwise take the '
+                    'whole ruleset down with it'.format(section=section, service=service,
+                                                        user=user))
+               config[section][service] = False
+               break
+   return config
+
 def get_interfaces():
    interfaces = []
    interface = get_external_ipv4_interface(args.ipv4dest)
@@ -223,15 +280,20 @@ if __name__ == "__main__":
    if os.geteuid() != 0: sys.exit('Root permissions required.')
 
    args = parse_arguments()
-   config = get_configuration()
+   config = disable_services_missing_their_users(args.basedir, get_configuration())
    interfaces = get_interfaces()
 
    match args.command:
       case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':
-         stop()
+         # Validate BEFORE tearing anything down. This ran the other way round, and `test`
+         # exits on a bad ruleset - so the tables were already deleted by the time anything
+         # checked, and a config that did not compile left the host with no firewall at all.
+         # nft -c is happy to check a ruleset whose tables are currently loaded, so there is
+         # nothing to be gained by flushing first.
          for interface in interfaces:
             nft_input = test(args.basedir, interface, config)
-         for file in glob.glob(args.basedir + '/ipv[4|6].nft'):
+         stop()
+         for file in glob.glob(args.basedir + '/ipv[46].nft'):
              print('Loading rules from ' + file)
              start(file)
       case 'stop' | 'flush':
