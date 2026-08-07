@@ -2,7 +2,32 @@
   #
   ## Outbound BTC Rules
   #
+  # `skuid` decides WHETHER bitcoind may reach the internet. These decide how much of it.
+  #
+  # Without them the grant is unbounded, and a daemon that has been taken over inherits an
+  # unmetered exit to anywhere - which is most of the value in taking over a daemon that is
+  # allowed out at all. bitcoind opens a couple of dozen outbound connections in normal
+  # service, so 500 is far above anything it does and far below anything useful to an
+  # attacker.
+  #
+  # `over ... drop` rather than `... continue`. A limit whose rule carries no verdict is
+  # counted and then ignored: when it fails to match, evaluation simply moves to the next
+  # rule, and the next rule here accepts unconditionally.
+  #
   #############################################################################
+
+  ##
+  # Concurrent outbound connections, per user
+  #
+  set btc_outbound_connection_limit {
+    typeof meta skuid
+    size 65535
+    flags dynamic
+  }
+
   chain ACCEPT_BTC {
+    ct state new meta skuid btc add @btc_outbound_connection_limit { meta skuid ct count over 500 } drop
+    ct state new meta skuid btc limit rate over 50/second drop
     ct state new,established meta skuid btc accept
   }
+

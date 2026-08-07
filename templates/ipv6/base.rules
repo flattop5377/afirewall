@@ -9,13 +9,10 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.tcp2194 %}{% include 'ipv6/inbound/tcp2194.rules' %}{% endif %}
 {% if inbound.http %}{% include 'ipv6/inbound/http.rules' %}{% endif %}
 {% if inbound.https %}{% include 'ipv6/inbound/https.rules' %}{% endif %}
-{% if inbound.orport %}{% include 'ipv6/inbound/orport.rules' %}{% endif %}
-{% if inbound.dirport %}{% include 'ipv6/inbound/dirport.rules' %}{% endif %}
 {% if inbound.syslogtls %}{% include 'ipv6/inbound/syslogtls.rules' %}{% endif %}
 {% if inbound.baculadirector %}{% include 'ipv6/inbound/baculadirector.rules' %}{% endif %}
 {% if inbound.baculafiledaemon %}{% include 'ipv6/inbound/baculafiledaemon.rules' %}{% endif %}
 {% if inbound.baculastoragedaemon %}{% include 'ipv6/inbound/baculastoragedaemon.rules' %}{% endif %}
-{% if inbound.bitcoin %}{% include 'ipv6/inbound/bitcoin.rules' %}{% endif %}
 {% if inbound.udp1514 %}{% include 'ipv6/inbound/udp1514.rules' %}{% endif %}
 {% if inbound.tor %}{% include 'ipv6/inbound/tor.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
