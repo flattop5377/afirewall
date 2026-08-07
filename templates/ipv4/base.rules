@@ -27,13 +27,10 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.tcp2194 %}{% include 'ipv4/inbound/tcp2194.rules' %}{% endif %}
 {% if inbound.http %}{% include 'ipv4/inbound/http.rules' %}{% endif %}
 {% if inbound.https %}{% include 'ipv4/inbound/https.rules' %}{% endif %}
-{% if inbound.orport %}{% include 'ipv4/inbound/orport.rules' %}{% endif %}
-{% if inbound.dirport %}{% include 'ipv4/inbound/dirport.rules' %}{% endif %}
 {% if inbound.syslogtls %}{% include 'ipv4/inbound/syslogtls.rules' %}{% endif %}
 {% if inbound.baculadirector %}{% include 'ipv4/inbound/baculadirector.rules' %}{% endif %}
 {% if inbound.baculafiledaemon %}{% include 'ipv4/inbound/baculafiledaemon.rules' %}{% endif %}
 {% if inbound.baculastoragedaemon %}{% include 'ipv4/inbound/baculastoragedaemon.rules' %}{% endif %}
-{% if inbound.bitcoin %}{% include 'ipv4/inbound/bitcoin.rules' %}{% endif %}
 {% if inbound.udp1514 %}{% include 'ipv4/inbound/udp1514.rules' %}{% endif %}
 {% if inbound.tor %}{% include 'ipv4/inbound/tor.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv4/inbound/btc.rules' %}{% endif %}
