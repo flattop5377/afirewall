@@ -223,6 +223,36 @@ class TestAfirewall(unittest.TestCase):
                 self.assertTrue(path.startswith(family + '/'),
                                 family + '/base.rules includes ' + path + ' from another family')
 
+    def testEveryConfigKeyHasATemplateBehindIt(self):
+        """A key with no template is a switch wired to nothing. Turn it on and either nothing
+        happens - which reads as a firewall rule that is in force and is not - or the include
+        raises TemplateNotFound while a firewall is being brought up. `inbound.bitcoin` was
+        the second kind, a near-miss for the btc.rules that does exist."""
+        declared = services()
+        for side in ('inbound', 'outbound'):
+            for service in sorted(declared[side]):
+                found = ['templates/{f}/{s}/{n}.rules'.format(f=f, s=side, n=service)
+                         for f in FAMILIES
+                         if os.path.isfile('templates/{f}/{s}/{n}.rules'.format(f=f, s=side, n=service))]
+                self.assertTrue(found,
+                                side + '.' + service + ' is in afirewall.conf with no template '
+                                'in either family')
+
+    def testEveryTemplateHasAConfigKeyToTurnItOn(self):
+        """The same skew from the other side. A template no key names cannot be switched on,
+        so it is work that looks like coverage and provides none."""
+        declared = services()
+        for family in FAMILIES:
+            for side in ('inbound', 'outbound'):
+                directory = 'templates/{f}/{s}'.format(f=family, s=side)
+                for name in sorted(os.listdir(directory)):
+                    if not name.endswith('.rules'):
+                        continue
+                    service = name[:-len('.rules')]
+                    self.assertIn(service, declared[side],
+                                  directory + '/' + name + ' has no ' + side + '.' + service +
+                                  ' key in afirewall.conf')
+
     def testEveryServiceTemplateIsReachable(self):
         """The other direction: a template nothing includes is a rule set nobody can turn on,
         which reads as coverage while providing none."""
