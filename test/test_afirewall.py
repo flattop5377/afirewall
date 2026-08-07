@@ -1,6 +1,7 @@
 from afirewall import afirewall
 from jinja2 import Environment, FileSystemLoader
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -119,6 +120,45 @@ class TestAfirewall(unittest.TestCase):
                              family + ' does not define VALID_ICMP in both tables')
             self.assertEqual(2, rendered.count(jump),
                              family + ' does not jump to VALID_ICMP from both tables')
+
+    def testTheUsersAServiceNeedsAreReadFromItsRules(self):
+        """Read out of the templates rather than declared beside them, so there is no second
+        list of who needs whom to fall out of step. Most services match no user at all."""
+        self.assertEqual({'debian-tor'}, afirewall.users_a_service_matches('.', 'tor'))
+        self.assertEqual({'btc'}, afirewall.users_a_service_matches('.', 'btc'))
+        self.assertEqual(set(), afirewall.users_a_service_matches('.', 'ssh'))
+        self.assertEqual(set(), afirewall.users_a_service_matches('.', 'wireguard'))
+
+    def testNoEnabledServiceIsLeftMatchingAUserThatIsNotThere(self):
+        """The invariant, asserted rather than a fixed expectation, because whether debian-tor
+        exists is a property of whichever machine is running the suite.
+
+        `meta skuid nosuchuser` does not match nothing - nft refuses the table holding it, so
+        one absent user costs every rule in that family and the host ends up with no firewall
+        instead of one service fewer."""
+        every = services()
+        config = {'inbound': {name: True for name in every['inbound']},
+                  'outbound': {name: True for name in every['outbound']}}
+        guarded = afirewall.disable_services_missing_their_users('.', config)
+        for section in ('inbound', 'outbound'):
+            for service, enabled in guarded[section].items():
+                if not enabled:
+                    continue
+                for user in afirewall.users_a_service_matches('.', service):
+                    try:
+                        pwd.getpwnam(user)
+                    except KeyError:
+                        self.fail(section + '.' + service + ' left enabled, but ' + user +
+                                  ' does not exist - nft would refuse the whole table')
+
+    def testAServiceThatMatchesNoUserIsNeverDisabled(self):
+        """The guard has to be surgical. Switching off ssh because tor's user is absent would
+        be a worse outage than the one it is preventing."""
+        guarded = afirewall.disable_services_missing_their_users(
+            '.', {'inbound': {'ssh': True, 'http': True}, 'outbound': {'ssh': True}})
+        self.assertTrue(guarded['inbound']['ssh'])
+        self.assertTrue(guarded['inbound']['http'])
+        self.assertTrue(guarded['outbound']['ssh'])
 
     def testBothFamiliesHaveASpoofListAndItIsRead(self):
         """ipv6 spent its whole life returning an empty list here, so the chain it feeds
