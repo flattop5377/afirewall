@@ -144,7 +144,13 @@ table ip a-firewall-inbound-ipv4 {
   chain SPOOFING {
     type filter hook input priority raw; policy accept;
 
-{% for network in SPOOFED_NETWORKS %}    ip saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
+    ##
+    # Qualified by the external device, because "spoofed" is a claim about where a packet
+    # arrived, not about its source address alone. A private source is forged when it comes
+    # off the internet and entirely ordinary when it comes over a tunnel or a bridge. Without
+    # the qualification this chain drops every packet carried by wg0 - the overlay is
+    # 192.168.249.0/24, and at priority raw it dies here before any accept rule is reached.
+{% for network in SPOOFED_NETWORKS %}    iifname {{ EXTERNAL_DEVICE }} ip saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
 {% endfor %}
   }
 
