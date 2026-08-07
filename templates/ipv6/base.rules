@@ -14,7 +14,8 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.baculafiledaemon %}{% include 'ipv6/inbound/baculafiledaemon.rules' %}{% endif %}
 {% if inbound.baculastoragedaemon %}{% include 'ipv6/inbound/baculastoragedaemon.rules' %}{% endif %}
 {% if inbound.udp1514 %}{% include 'ipv6/inbound/udp1514.rules' %}{% endif %}
-{% if inbound.tor %}{% include 'ipv6/inbound/tor.rules' %}{% endif %}
+{% if inbound.orport %}{% include 'ipv6/inbound/orport.rules' %}{% endif %}
+{% if inbound.dirport %}{% include 'ipv6/inbound/dirport.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
 {% if inbound.wireguard %}{% include 'ipv6/inbound/wireguard.rules' %}{% endif %}
 
@@ -43,8 +44,8 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
 {% if inbound.udp1514 %}    udp dport 1514 jump ACCEPT_UDP1514{% endif %}
-{% if inbound.tor %}    tcp dport 9001 jump ACCEPT_TOR{% endif %}
-{% if inbound.tor %}    tcp dport 9030 jump ACCEPT_TOR{% endif %}
+{% if inbound.orport %}    tcp dport 9001 jump ACCEPT_ORPORT{% endif %}
+{% if inbound.dirport %}    tcp dport 9030 jump ACCEPT_DIRPORT{% endif %}
 {% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
 {% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
 
@@ -298,8 +299,8 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if inbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
 {% if inbound.udp1514 %}    udp sport 1514 ct state established accept{% endif %}
-{% if inbound.tor %}    tcp sport 9001 ct state established accept{% endif %}
-{% if inbound.tor %}    tcp sport 9030 ct state established accept{% endif %}
+{% if inbound.orport %}    tcp sport 9001 ct state established accept{% endif %}
+{% if inbound.dirport %}    tcp sport 9030 ct state established accept{% endif %}
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
 {% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 
