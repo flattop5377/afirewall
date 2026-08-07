@@ -65,8 +65,50 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if outbound.tor %}    meta skuid debian-tor ct state established accept{% endif %}
 {% if outbound.btc %}    meta skuid btc ct state established accept{% endif %}
 
-    ip protocol icmp jump VALID_ICMP
+    meta l4proto ipv6-icmp jump VALID_ICMP
 
+  }
+
+  #############################################################################
+  #
+  ## ICMPv6 Rules
+  #
+  #############################################################################
+
+  ##
+  # ICMPv6 rate limit per source
+  #
+  set icmp_rate_limit {
+    type ipv6_addr
+    timeout 60s
+    flags dynamic
+  }
+
+  ##
+  # Only allow valid ICMPv6 inbound traffic.
+  #   Drop all traffic except what's specifically allowed
+  #
+  # ICMPv6 is not optional the way ICMPv4 is. Neighbour discovery IS address resolution, so
+  # filtering it does not harden the host, it disconnects it; and packet-too-big is the only
+  # path-MTU mechanism IPv6 has, because routers on the path never fragment. Both sit ahead
+  # of the rate limit - a limit that sheds them turns a busy segment into an outage rather
+  # than a slowdown.
+  #
+  # Sources:
+  #   https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
+  #   RFC 4890: Recommendations for Filtering ICMPv6 Messages in Firewalls
+  chain VALID_ICMP {
+    icmpv6 type nd-neighbor-solicit accept
+    icmpv6 type nd-neighbor-advert accept
+    icmpv6 type nd-router-solicit accept
+    icmpv6 type nd-router-advert accept
+    icmpv6 type packet-too-big accept
+
+    icmpv6 type destination-unreachable update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type time-exceeded update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type parameter-problem update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type echo-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type echo-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
   }
 
   #############################################################################
@@ -88,7 +130,16 @@ table ip6 a-firewall-inbound-ipv6 {
   chain SPOOFING {
     type filter hook input priority mangle; policy accept;
 
-{% for network in SPOOFED_NETWORKS %}    ip saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
+    ##
+    # Qualified by the external device - see the ipv4 template for why.
+    #
+    # `ip6 saddr`, not `ip saddr`: this is an ip6 table and the ipv4 selector does not parse
+    # there. It has never been caught because it has never rendered - there is no
+    # lists/spoofed_IPV6_networks.list, and get_spoofed_networks() guards its open() with
+    # `if interface.family == Family.IPV4`, so ipv6 gets an empty list and this loop emits
+    # nothing. THIS CHAIN IS CURRENTLY A NO-OP: ipv6 has no anti-spoofing whatsoever, and the
+    # day a list is added is the day the bad selector would have taken the table down with it.
+{% for network in SPOOFED_NETWORKS %}    iifname {{ EXTERNAL_DEVICE }} ip6 saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
 {% endfor %}
   }
 
@@ -264,6 +315,8 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.tor %}    meta skuid debian-tor jump ACCEPT_TOR{% endif %}
 {% if outbound.btc %}    meta skuid btc jump ACCEPT_TOR{% endif %}
 
+    meta l4proto ipv6-icmp jump VALID_ICMP
+
   }
 
   # Count the number of packets dropped by the INVALID_FLAGS chain
@@ -341,21 +394,17 @@ table ip6 a-firewall-outbound-ipv6 {
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
   chain VALID_ICMP {
-    icmp type echo-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type destination-unreachable update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type redirect update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type echo-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type time-exceeded update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type parameter-problem update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type router-advertisement update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type router-solicitation update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type nd-neighbor-solicit accept
+    icmpv6 type nd-neighbor-advert accept
+    icmpv6 type nd-router-solicit accept
+    icmpv6 type nd-router-advert accept
+    icmpv6 type packet-too-big accept
+
+    icmpv6 type destination-unreachable update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type time-exceeded update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type parameter-problem update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type echo-request update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type echo-reply update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
   }
 
 }
