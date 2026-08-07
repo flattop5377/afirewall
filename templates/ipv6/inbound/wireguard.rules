@@ -1,0 +1,48 @@
+  #############################################################################
+  #
+  ## WireGuard Rules
+  #
+  # Symmetric with the outbound template, and only one half of it runs here.
+  #
+  # A WireGuard peer whose address moves cannot be dialled, so the peer with the dynamic
+  # address has to be the one that initiates - it is the only side that always knows where
+  # the other one is. That makes the fixed-address side purely dialled: it listens, it
+  # replies, and it never originates. So on a host of that shape only `inbound.wireguard`
+  # is ever enabled, and the outbound template sits unused until the host becomes a dialer.
+  #
+  # Which side a host is is not something a firewall can detect, so both exist and the
+  # config picks. See templates/ipv6/outbound/wireguard.rules.
+  #
+  #############################################################################
+
+  ##
+  # WireGuard connection rate limit
+  #
+  # Keyed on source address, which for a dialer on a dynamic address is a key that moves.
+  # That is not a fault - each address is still limited - but it does mean the counter
+  # measures an address rather than a peer, and a peer that has just been renumbered
+  # arrives with a clean allowance.
+  #
+  set wireguard_rate_limit {
+    type ipv6_addr
+    size 65535
+    timeout 900s
+    flags dynamic
+  }
+
+  ##
+  # WireGuard number of connections per source IP limit
+  #
+  set wireguard_connection_limit {
+    type ipv6_addr
+    size 65535
+    flags dynamic
+  }
+
+
+  chain ACCEPT_WIREGUARD {
+    ct state new udp dport 51820 update @wireguard_rate_limit { ip6 saddr limit rate 5/minute } continue
+    ct state new udp dport 51820 add @wireguard_connection_limit { ip6 saddr ct count over 20 } continue
+    ct state new,established udp dport 51820 accept
+  }
+

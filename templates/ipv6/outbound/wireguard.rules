@@ -1,0 +1,13 @@
+  #############################################################################
+  #
+  ## Outbound WireGuard Rules
+  #
+  # For the peer that dials. Enable this where the host initiates the tunnel - which is
+  # the peer whose own address is dynamic, since it is the only one that can reliably find
+  # the other end. A host that is dialled needs the inbound template and not this one.
+  #
+  #############################################################################
+  chain ACCEPT_WIREGUARD {
+    ct state new,established udp dport 51820 accept
+  }
+

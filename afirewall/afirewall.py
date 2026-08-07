@@ -53,21 +53,26 @@ def get_spoofed_networks(base_directory, interface):
    filename = base_directory + '/lists/spoofed_' + interface.family.name + '_networks.list'
    local_network = interface.network
    spoofed_networks  = []
-   if interface.family == Family.IPV4:
-      with open(filename) as file:
-         for line in file:
-            li = line.strip()
-            if not li.startswith('#'):
-               if interface.family == Family.IPV4:
-                  match = re.search('([0-9\./]+)', li)
-               elif interface.family == Family.IPV6:
-                  match = re.search('([0-9a-f:/]+)', li)
-               list_network = ip_network(match.group(1))
-               if local_network.subnet_of(list_network):
-                   for network in list_network.address_exclude(local_network):
-                     spoofed_networks.append(network)
-               else:
-                  spoofed_networks.append(list_network)
+   # Both families. This read used to be wrapped in `if interface.family == Family.IPV4`,
+   # which meant ipv6 got an empty list however good its list file was - and the SPOOFING
+   # chain it fed rendered with no rows at all, so ipv6 had no anti-spoofing and said
+   # nothing about it.
+   with open(filename) as file:
+      for line in file:
+         li = line.strip()
+         # Blank lines too, not only comments: '' does not start with '#', and the search
+         # below then returns None to have .group() called on it.
+         if li and not li.startswith('#'):
+            if interface.family == Family.IPV4:
+               match = re.search(r'([0-9\./]+)', li)
+            else:
+               match = re.search(r'([0-9a-fA-F:/]+)', li)
+            list_network = ip_network(match.group(1))
+            if local_network.subnet_of(list_network):
+                for network in list_network.address_exclude(local_network):
+                  spoofed_networks.append(network)
+            else:
+               spoofed_networks.append(list_network)
    return spoofed_networks
 
 def process_scripts(base_directory, interface, config):
