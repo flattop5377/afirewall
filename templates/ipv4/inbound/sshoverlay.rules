@@ -1,0 +1,28 @@
+  #############################################################################
+  #
+  ## SSH, but not from the internet
+  #
+  # The alternative to `inbound.ssh`, not an addition to it. Enable one or the other: this
+  # accepts SSH on every interface EXCEPT the one facing the internet, so a tunnel, a bridge
+  # or a local segment reaches sshd and a scanner does not.
+  #
+  # Written as `iifname != EXTERNAL_DEVICE` rather than as an allowed source network, because
+  # the device is a fact afirewall already works out for itself - it is whatever carries the
+  # default route - while a source network would be a second copy of the overlay's addressing
+  # kept here, out of step with wherever it is really defined.
+  #
+  # NO RATE OR CONNECTION LIMIT, deliberately. Anything arriving on a tunnel interface has
+  # already been authenticated by the tunnel, and a per-source limit here would be the one
+  # thing capable of locking an administrator out of a host that is otherwise healthy - which
+  # is the whole reason to prefer this over rate-limiting SSH on the public side.
+  #
+  # BEFORE ENABLING THIS AND DISABLING inbound.ssh: make sure something other than the tunnel
+  # can still reach the host. A tunnel with a single peer means that peer is the only way in,
+  # and the day it is unavailable is the day every host behind it is unreachable at once.
+  #
+  #############################################################################
+
+  chain ACCEPT_SSHOVERLAY {
+    iifname != {{ EXTERNAL_DEVICE }} ct state new,established tcp dport 22 accept
+  }
+

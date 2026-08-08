@@ -23,6 +23,7 @@
 table ip a-firewall-inbound-ipv4 {
 
 {% if inbound.ssh %}{% include 'ipv4/inbound/ssh.rules' %}{% endif %}
+{% if inbound.sshoverlay %}{% include 'ipv4/inbound/sshoverlay.rules' %}{% endif %}
 {% if inbound.smtp %}{% include 'ipv4/inbound/smtp.rules' %}{% endif %}
 {% if inbound.tcp2194 %}{% include 'ipv4/inbound/tcp2194.rules' %}{% endif %}
 {% if inbound.http %}{% include 'ipv4/inbound/http.rules' %}{% endif %}
@@ -53,6 +54,7 @@ table ip a-firewall-inbound-ipv4 {
     type filter hook input priority 20; policy drop;
   
 {% if inbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
+{% if inbound.sshoverlay %}    tcp dport 22 jump ACCEPT_SSHOVERLAY{% endif %}
 {% if inbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
 {% if inbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
 {% if inbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
@@ -310,6 +312,7 @@ table ip a-firewall-outbound-ipv4 {
     type filter hook output priority filter; policy drop;
 
 {% if inbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
+{% if inbound.sshoverlay %}    tcp sport 22 ct state established accept{% endif %}
 {% if inbound.smtp %}    tcp sport 25 ct state established accept{% endif %}
 {% if inbound.tcp2914 %}    tcp sport 2194 ct state established accept{% endif %}
 {% if inbound.http %}    tcp sport 80 ct state established accept{% endif %}
