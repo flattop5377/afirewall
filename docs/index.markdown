@@ -25,13 +25,37 @@ afirewall is a wrapper for a Netfilter firewall featuring:
 
 ## Installation
 
-Instructions to add a new Debian Package Repository: [Debian (APT) Package Repository](https://wiki.debian.org/DebianRepository)
-  * [Repository Signature Key](https://raw.githubusercontent.com/flattop5377/debrepo/refs/heads/master/conf/flattop5377.public.asc)
-  * /etc/apt/sources.list
+The repository ships a **deb822 sources file with the signing key inside it**, so adding it is one
+download rather than a key dance. Nothing has to be copied into `/etc/apt/trusted.gpg.d`, and
+nothing is trusted repository-wide.
+
+```sh
+sudo curl -fsSL -o /etc/apt/sources.list.d/flattop5377.sources \
+  https://raw.githubusercontent.com/flattop5377/debrepo/master/conf/flattop5377.sources
+sudo apt update
+sudo apt install afirewall
 ```
-deb https://raw.githubusercontent.com/flattop5377/debrepo/master main
+
+Check what you got before trusting it:
+
+```sh
+apt policy afirewall
+apt-cache show afirewall | grep -E '^(Package|Version|Filename)'
 ```
-  * [Sample Configuration](https://raw.githubusercontent.com/flattop5377/debrepo/refs/heads/master/conf/flattop5377.sources) to save in /etc/apt/sources.list.d/flattop5377.sources
+
+### Which suite
+
+The repository currently publishes **`bookworm` only**. On a newer Debian the sources file still
+works — `afirewall` is `Architecture: all` and pure Python, so the codename in the path is a label
+rather than a compatibility claim — but if you would rather be explicit, edit `Suites:` in the file
+you just downloaded.
+
+### If you prefer to write the file yourself
+
+Use the deb822 format above rather than a one-line `deb` entry. A one-liner needs the suite and the
+component and a `signed-by=` pointing at a key you have already installed, and getting any of the
+three wrong produces an error about signatures rather than about the line you typed. The shipped
+file carries the key inline and cannot be got wrong.
 
 ## Configuration
 
