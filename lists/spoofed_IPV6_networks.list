@@ -1,0 +1,38 @@
+# Networks that traffic is likely spoofed if received on the external
+# interface.
+#   This traffic is dropped, unless the external interface is in that network.
+#
+# Source: IANA IPv6 Special-Purpose Address Registry, last updated 2025-10-09
+#   https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
+#
+# Selected on that registry's own "Globally Reachable" column: a block marked False has no
+# business arriving from the internet, so a packet claiming one as its source on the external
+# device is forged. Blocks marked True are omitted whatever else they are.
+#
+# TWO ENTRIES ARE DELIBERATELY ABSENT, and both would break IPv6 if added.
+#
+#   fe80::/10  Link-Local Unicast. The registry marks it not globally reachable and it is
+#              still the ordinary source address for neighbour discovery and router
+#              advertisements, which arrive on the external device by definition. Drop it
+#              and the host stops resolving its neighbours. This is where IPv6 parts company
+#              with the IPv4 list beside it: ARP is layer 2 and never carries an IP source,
+#              so 169.254.0.0/16 is safe to drop there and fe80::/10 is not safe here.
+#
+#   ::/128     Unspecified. It is the required source for duplicate address detection, which
+#              a host on the same link performs before it has an address to send from.
+#
+# ff00::/8 is not in the registry - it is the multicast allocation - and is listed anyway,
+# because a multicast address is never a valid source. It is the counterpart of 224.0.0.0/4
+# in the IPv4 list.
+::1/128
+::ffff:0:0/96
+64:ff9b:1::/48
+100::/64
+100:0:0:1::/64
+2001:2::/48
+2001:10::/28
+2001:db8::/32
+3fff::/20
+5f00::/16
+fc00::/7
+ff00::/8

@@ -7,18 +7,18 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.ssh %}{% include 'ipv6/inbound/ssh.rules' %}{% endif %}
 {% if inbound.smtp %}{% include 'ipv6/inbound/smtp.rules' %}{% endif %}
 {% if inbound.tcp2194 %}{% include 'ipv6/inbound/tcp2194.rules' %}{% endif %}
+{% if inbound.tcp8000 %}{% include 'ipv6/inbound/tcp8000.rules' %}{% endif %}
 {% if inbound.http %}{% include 'ipv6/inbound/http.rules' %}{% endif %}
 {% if inbound.https %}{% include 'ipv6/inbound/https.rules' %}{% endif %}
-{% if inbound.orport %}{% include 'ipv6/inbound/orport.rules' %}{% endif %}
-{% if inbound.dirport %}{% include 'ipv6/inbound/dirport.rules' %}{% endif %}
 {% if inbound.syslogtls %}{% include 'ipv6/inbound/syslogtls.rules' %}{% endif %}
 {% if inbound.baculadirector %}{% include 'ipv6/inbound/baculadirector.rules' %}{% endif %}
 {% if inbound.baculafiledaemon %}{% include 'ipv6/inbound/baculafiledaemon.rules' %}{% endif %}
 {% if inbound.baculastoragedaemon %}{% include 'ipv6/inbound/baculastoragedaemon.rules' %}{% endif %}
-{% if inbound.bitcoin %}{% include 'ipv6/inbound/bitcoin.rules' %}{% endif %}
 {% if inbound.udp1514 %}{% include 'ipv6/inbound/udp1514.rules' %}{% endif %}
-{% if inbound.tor %}{% include 'ipv6/inbound/tor.rules' %}{% endif %}
+{% if inbound.orport %}{% include 'ipv6/inbound/orport.rules' %}{% endif %}
+{% if inbound.dirport %}{% include 'ipv6/inbound/dirport.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
+{% if inbound.wireguard %}{% include 'ipv6/inbound/wireguard.rules' %}{% endif %}
 
 
   #############################################################################
@@ -38,6 +38,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
 {% if inbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
 {% if inbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
+{% if inbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
 {% if inbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
 {% if inbound.https %}    tcp dport 443 jump ACCEPT_HTTPS{% endif %}
 {% if inbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
@@ -45,9 +46,10 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
 {% if inbound.udp1514 %}    udp dport 1514 jump ACCEPT_UDP1514{% endif %}
-{% if inbound.tor %}    tcp dport 9001 jump ACCEPT_TOR{% endif %}
-{% if inbound.tor %}    tcp dport 9030 jump ACCEPT_TOR{% endif %}
-{% if inbound.btc %}    tcp dport 8333 jump ACCEPT_TOR{% endif %}
+{% if inbound.orport %}    tcp dport 9001 jump ACCEPT_ORPORT{% endif %}
+{% if inbound.dirport %}    tcp dport 9030 jump ACCEPT_DIRPORT{% endif %}
+{% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
+{% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -56,6 +58,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if outbound.ntp %}    udp sport 123 ct state established accept{% endif %}
 {% if outbound.smtp %}    tcp sport 25 ct state established accept{% endif %}
 {% if outbound.tcp2194 %}    tcp sport 2194 ct state established accept{% endif %}
+{% if outbound.tcp8000 %}    tcp sport 8000 ct state established accept{% endif %}
 {% if outbound.syslogtls %}    tcp sport 6514 ct state established accept{% endif %}
 {% if outbound.baculadirector %}    tcp sport 9101 ct state established accept{% endif %}
 {% if outbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
@@ -64,9 +67,52 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if outbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
 {% if outbound.tor %}    meta skuid debian-tor ct state established accept{% endif %}
 {% if outbound.btc %}    meta skuid btc ct state established accept{% endif %}
+{% if outbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 
-    ip protocol icmp jump VALID_ICMP
+    meta l4proto ipv6-icmp jump VALID_ICMP
 
+  }
+
+  #############################################################################
+  #
+  ## ICMPv6 Rules
+  #
+  #############################################################################
+
+  ##
+  # ICMPv6 rate limit per source
+  #
+  set icmp_rate_limit {
+    type ipv6_addr
+    timeout 60s
+    flags dynamic
+  }
+
+  ##
+  # Only allow valid ICMPv6 inbound traffic.
+  #   Drop all traffic except what's specifically allowed
+  #
+  # ICMPv6 is not optional the way ICMPv4 is. Neighbour discovery IS address resolution, so
+  # filtering it does not harden the host, it disconnects it; and packet-too-big is the only
+  # path-MTU mechanism IPv6 has, because routers on the path never fragment. Both sit ahead
+  # of the rate limit - a limit that sheds them turns a busy segment into an outage rather
+  # than a slowdown.
+  #
+  # Sources:
+  #   https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
+  #   RFC 4890: Recommendations for Filtering ICMPv6 Messages in Firewalls
+  chain VALID_ICMP {
+    icmpv6 type nd-neighbor-solicit accept
+    icmpv6 type nd-neighbor-advert accept
+    icmpv6 type nd-router-solicit accept
+    icmpv6 type nd-router-advert accept
+    icmpv6 type packet-too-big accept
+
+    icmpv6 type destination-unreachable update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type time-exceeded update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type parameter-problem update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type echo-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type echo-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
   }
 
   #############################################################################
@@ -88,7 +134,17 @@ table ip6 a-firewall-inbound-ipv6 {
   chain SPOOFING {
     type filter hook input priority mangle; policy accept;
 
-{% for network in SPOOFED_NETWORKS %}    ip saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
+    ##
+    # Qualified by the external device - see the ipv4 template for why.
+    #
+    # `ip6 saddr`, not `ip saddr`: this is an ip6 table, where the ipv4 selector is a parse
+    # error and not a rule that quietly matches nothing. It survived as long as it did only
+    # because it never rendered - there was no lists/spoofed_IPV6_networks.list and
+    # get_spoofed_networks() opened one for IPv4 alone, so this loop emitted no rows at all
+    # and ipv6 had no anti-spoofing while appearing to. Both are fixed. The list is chosen
+    # from IANA's own "Globally Reachable" column, and names the two entries it leaves out -
+    # link-local and unspecified - because dropping either breaks neighbour discovery.
+{% for network in SPOOFED_NETWORKS %}    iifname {{ EXTERNAL_DEVICE }} ip6 saddr {{ network }} counter name NUMBER_OF_SPOOFS_DROPPED drop
 {% endfor %}
   }
 
@@ -215,6 +271,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ntp %}{% include 'ipv6/outbound/ntp.rules' %}{% endif %}
 {% if outbound.smtp %}{% include 'ipv6/outbound/smtp.rules' %}{% endif %}
 {% if outbound.tcp2194 %}{% include 'ipv6/outbound/tcp2194.rules' %}{% endif %}
+{% if outbound.tcp8000 %}{% include 'ipv6/outbound/tcp8000.rules' %}{% endif %}
 {% if outbound.syslogtls %}{% include 'ipv6/outbound/syslogtls.rules' %}{% endif %}
 {% if outbound.baculadirector %}{% include 'ipv6/outbound/baculadirector.rules' %}{% endif %}
 {% if outbound.baculafiledaemon %}{% include 'ipv6/outbound/baculafiledaemon.rules' %}{% endif %}
@@ -223,6 +280,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ssh %}{% include 'ipv6/outbound/ssh.rules' %}{% endif %}
 {% if outbound.tor %}{% include 'ipv6/outbound/tor.rules' %}{% endif %}
 {% if outbound.btc %}{% include 'ipv6/outbound/btc.rules' %}{% endif %}
+{% if outbound.wireguard %}{% include 'ipv6/outbound/wireguard.rules' %}{% endif %}
 
   #############################################################################
   #
@@ -245,24 +303,29 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if inbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
 {% if inbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
 {% if inbound.udp1514 %}    udp sport 1514 ct state established accept{% endif %}
-{% if inbound.tor %}    tcp sport 9001 ct state established accept{% endif %}
-{% if inbound.tor %}    tcp sport 9030 ct state established accept{% endif %}
+{% if inbound.orport %}    tcp sport 9001 ct state established accept{% endif %}
+{% if inbound.dirport %}    tcp sport 9030 ct state established accept{% endif %}
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
+{% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
-{% if outbound.dhcp %}    udp dport 53 jump ACCEPT_DNS{% endif %}
+{% if outbound.dns %}    udp dport 53 jump ACCEPT_DNS{% endif %}
 {% if outbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
 {% if outbound.https %}    tcp dport 443 jump ACCEPT_HTTPS{% endif %}
 {% if outbound.ntp %}    udp dport 123 jump ACCEPT_NTP{% endif %}
 {% if outbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
 {% if outbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
+{% if outbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
 {% if outbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
 {% if outbound.baculadirector %}    tcp dport 9101 jump ACCEPT_BACULADIRECTOR{% endif %}
 {% if outbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
 {% if outbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
 {% if outbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
 {% if outbound.tor %}    meta skuid debian-tor jump ACCEPT_TOR{% endif %}
-{% if outbound.btc %}    meta skuid btc jump ACCEPT_TOR{% endif %}
+{% if outbound.btc %}    meta skuid btc jump ACCEPT_BTC{% endif %}
+{% if outbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
+
+    meta l4proto ipv6-icmp jump VALID_ICMP
 
   }
 
@@ -341,21 +404,17 @@ table ip6 a-firewall-outbound-ipv6 {
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
   chain VALID_ICMP {
-    icmp type echo-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type destination-unreachable update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type redirect update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type echo-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type time-exceeded update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type parameter-problem update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type router-advertisement update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
-    icmp type router-solicitation update @icmp_rate_limit { ip6 saddr limit rate 10/second } accept
+    icmpv6 type nd-neighbor-solicit accept
+    icmpv6 type nd-neighbor-advert accept
+    icmpv6 type nd-router-solicit accept
+    icmpv6 type nd-router-advert accept
+    icmpv6 type packet-too-big accept
+
+    icmpv6 type destination-unreachable update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type time-exceeded update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type parameter-problem update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type echo-request update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
+    icmpv6 type echo-reply update @icmp_rate_limit { ip6 daddr limit rate 10/second } accept
   }
 
 }
