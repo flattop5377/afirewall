@@ -1,3 +1,25 @@
+afirewall (20260815.0.0) unstable; urgency=medium
+
+  [ Flattop ]
+  * Added ipv6 rules
+  * Updated version, and development status classifier.
+  * Added entry to changelog
+  * Removed series file
+  * Revert "Removed series file"
+  * Removed quilt's series file.  Added .gitignore to ignore working files
+
+  [ flattop5377 ]
+  * Scope spoof drops to the external device, and fix an IPv6 ruleset that never loaded
+  * Add a WireGuard service, and give IPv6 the spoof list it never had
+  * Send btc and dns to their own chains
+  * Disable a service whose user is missing, and validate before tearing anything down
+  * Bound the outbound grant, drop three dead includes, and fix the escape warnings
+  * Split inbound tor into orport and dirport, and gate config against templates
+  * tcp8000, for a check-in collector
+  * Pin the branch layout and build outside the tree
+
+ -- Flattop5377 <flattop5377@proton.me>  Sat, 15 Aug 2026 17:49:26 -0600
+
 afirewall (20250429.0.0) unstable; urgency=low
 
   [ Flattop ]
