@@ -3,4 +3,9 @@ afirewall/
 debhelper-build-stamp
 files
 tmp/
-
+.debhelper/
+*.debhelper
+*.substvars
+afirewall.postinst.debhelper
+.pybuild/
+*.log
