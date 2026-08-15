@@ -7,6 +7,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.ssh %}{% include 'ipv6/inbound/ssh.rules' %}{% endif %}
 {% if inbound.smtp %}{% include 'ipv6/inbound/smtp.rules' %}{% endif %}
 {% if inbound.tcp2194 %}{% include 'ipv6/inbound/tcp2194.rules' %}{% endif %}
+{% if inbound.tcp8000 %}{% include 'ipv6/inbound/tcp8000.rules' %}{% endif %}
 {% if inbound.http %}{% include 'ipv6/inbound/http.rules' %}{% endif %}
 {% if inbound.https %}{% include 'ipv6/inbound/https.rules' %}{% endif %}
 {% if inbound.syslogtls %}{% include 'ipv6/inbound/syslogtls.rules' %}{% endif %}
@@ -37,6 +38,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
 {% if inbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
 {% if inbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
+{% if inbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
 {% if inbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
 {% if inbound.https %}    tcp dport 443 jump ACCEPT_HTTPS{% endif %}
 {% if inbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
@@ -56,6 +58,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if outbound.ntp %}    udp sport 123 ct state established accept{% endif %}
 {% if outbound.smtp %}    tcp sport 25 ct state established accept{% endif %}
 {% if outbound.tcp2194 %}    tcp sport 2194 ct state established accept{% endif %}
+{% if outbound.tcp8000 %}    tcp sport 8000 ct state established accept{% endif %}
 {% if outbound.syslogtls %}    tcp sport 6514 ct state established accept{% endif %}
 {% if outbound.baculadirector %}    tcp sport 9101 ct state established accept{% endif %}
 {% if outbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
@@ -268,6 +271,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ntp %}{% include 'ipv6/outbound/ntp.rules' %}{% endif %}
 {% if outbound.smtp %}{% include 'ipv6/outbound/smtp.rules' %}{% endif %}
 {% if outbound.tcp2194 %}{% include 'ipv6/outbound/tcp2194.rules' %}{% endif %}
+{% if outbound.tcp8000 %}{% include 'ipv6/outbound/tcp8000.rules' %}{% endif %}
 {% if outbound.syslogtls %}{% include 'ipv6/outbound/syslogtls.rules' %}{% endif %}
 {% if outbound.baculadirector %}{% include 'ipv6/outbound/baculadirector.rules' %}{% endif %}
 {% if outbound.baculafiledaemon %}{% include 'ipv6/outbound/baculafiledaemon.rules' %}{% endif %}
@@ -311,6 +315,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if outbound.ntp %}    udp dport 123 jump ACCEPT_NTP{% endif %}
 {% if outbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
 {% if outbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
+{% if outbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
 {% if outbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
 {% if outbound.baculadirector %}    tcp dport 9101 jump ACCEPT_BACULADIRECTOR{% endif %}
 {% if outbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
