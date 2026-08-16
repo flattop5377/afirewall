@@ -13,13 +13,12 @@ you wiring anything up, and that never touches iptables.**
 
 ## Configure it from Ansible
 
-This is the reason afirewall exists. Every other firewall the author tried could be *installed* by a
-configuration manager and then had to be *configured* by hand, or through a module that wrapped a
-tool that wrapped the kernel.
+This is the reason afirewall exists, and everything else follows from it.
 
-afirewall's configuration is a flat list of `<direction>.<service>: enable` lines. There is no
-nesting, no ordering, no syntax to get wrong — which means a play can compose a host's firewall by
-appending one line at a time, and two plays that know nothing about each other cannot collide.
+The configuration is a flat list of `<direction>.<service>: enable` lines. No nesting, no ordering,
+no syntax to get wrong. That shape is chosen for one purpose: **a play can compose a host's firewall
+by appending a single line**, so two roles that know nothing about each other can each open the port
+they need without colliding, and without either one having to know the whole picture.
 
 ```yaml
 - name: "this host answers on 443"
@@ -93,11 +92,20 @@ nftables replaced iptables — it is in the kernel, it is what `iptables` itself
 shim over on any current distribution, and new work happens there. afirewall generates nft and
 nothing else.
 
-That is a hard rule here rather than a preference, and it costs things. `fwknop` was rejected
-because it `Depends: iptables`. fail2ban is usable but wants its `banaction` pinned to the nftables
-backend, or you end up with two front ends writing rules that cannot see each other. The rule is
-worth the cost: **one tool writing packet filter rules is the only arrangement in which reading the
-ruleset tells you what the host does.**
+It is a rule rather than a default, and it is kept even when it narrows the options — because
+**one tool writing packet filter rules is the arrangement in which reading the ruleset tells you
+what the host does.** A ruleset you can read end to end is worth more than one assembled from two
+places.
+
+Running alongside fail2ban works well; point its `banaction` at the nftables backend and both
+tools stay in the same view:
+
+```
+# /etc/fail2ban/jail.local
+[DEFAULT]
+banaction = nftables[type=multiport]
+banaction_allports = nftables[type=allports]
+```
 
 **Both directions default to drop.** Inbound *and* outbound, with no blanket
 `ct state established,related accept` covering everything. A service's reply path is opened by that
@@ -133,11 +141,11 @@ Which means the ruleset is regenerated from your configuration at boot rather th
 dump. Edit the config, reboot, and you get what the config says — not what the ruleset happened to
 be when somebody last ran `save`.
 
-**One warning, because it will bite somebody.** Debian ships `/etc/nftables.conf` beginning with
-`flush ruleset`, which deletes *every* table in the kernel — afirewall's included — and then
-installs chains that state no policy, meaning accept. If `nftables.service` starts after the
-persistence plugin has restored your firewall, the host ends up with no firewall at all while
-`systemctl status nftables` reads green. afirewall does not need that unit:
+**One thing worth knowing.** Debian's stock `/etc/nftables.conf` opens with `flush ruleset`, which
+clears *every* table in the kernel and then installs chains that state no policy — meaning accept.
+If `nftables.service` happens to start after the persistence plugin has restored your firewall, the
+host is left open while `systemctl status nftables` reads green. Since afirewall persists itself,
+the simplest arrangement is to let one thing restore the ruleset:
 
 ```sh
 sudo systemctl disable --now nftables.service
