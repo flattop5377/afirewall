@@ -1,3 +1,28 @@
+afirewall (20260816.3.0-1) unstable; urgency=medium
+
+  * A host came up with no firewall after a reboot and reported that it had
+    started successfully. The generated ruleset was written to /run, which is
+    emptied at boot, so the boot-time run rebuilt it rather than restoring it -
+    and that run happens before the network is configured, where the external
+    interface cannot be found by routing lookup. Nothing was generated, the
+    tables were dropped anyway, and the exit status was 0. Rulesets now persist
+    in /var/lib/afirewall and are restored at boot.
+  * The two things this program does are named for what they do. `restore` loads
+    the saved ruleset; `regenerate` rebuilds it from the configuration. Run
+    `afirewall regenerate` after editing afirewall.conf. netfilter-persistent's
+    `start` is an alias of `restore` and is what runs at boot - it sends only
+    start, save and flush to its plugins, so that name cannot change.
+    `restart`, `reload` and `force-reload` alias `regenerate`.
+  * `save` writes the ruleset down without loading it, which is what the verb
+    means. It used to be a synonym for restart, so asking to record the current
+    state also tore the firewall down and put it back.
+  * A run that finds no external interface in any address family now refuses and
+    changes nothing, rather than deleting the firewall tables and exiting 0. A
+    single family finding none is still only a warning: a host without IPv6 is
+    not a host with a broken IPv6 firewall.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Sun, 16 Aug 2026 16:58:59 -0600
+
 afirewall (20260816.2.0-1) unstable; urgency=medium
 
   * A host with IPv6 never got an IPv6 ruleset. Interface discovery matched the
