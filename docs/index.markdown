@@ -3,7 +3,7 @@ layout: home
 title: A Pure Netfilter Firewall Wrapper
 ---
 
-*** Status: Alpha - Testing in non-production systems ***
+*** Status: Beta — feature complete, in production on the maintainer's own hosts ***
 
 [Open Issues](https://github.com/flattop5377/afirewall/issues)
 
