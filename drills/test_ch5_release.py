@@ -10,6 +10,7 @@ because a shallow or partial checkout is not evidence of drift.
 
 import pathlib
 import re
+import shutil
 import subprocess
 
 import pytest
@@ -137,12 +138,101 @@ def test_the_nft_the_templates_need_is_declared():
         f"existed. Declared: {line.strip()!r}")
 
 
-@pytest.mark.proves("ch5-6", depth="unit")
-def test_the_declared_floor_is_the_real_one():
-    unwatched("ch5-6", "a full generated ruleset run through `nft -c` under the OLDEST nftables "
-                       "that matters — a bookworm container is enough — which is ch5-U1. Reading "
-                       "changelogs establishes when a feature appeared, not that everything else "
-                       "in the ruleset loads beside it")
+#: Where an nft of a given version can be obtained. THIS IS A LOOKUP AND NOT A SOURCE OF TRUTH:
+#: `debian/control` decides the floor, and this only says where to find that nft. A floor set to a
+#: version absent from here makes the drill skip and say so, which is honest - it is better than
+#: silently testing a version nobody declared.
+NFT_IMAGES = {
+    "0.9.3": "ubuntu:20.04",
+    "0.9.8": "debian:bullseye",
+    "1.0.2": "ubuntu:22.04",
+    "1.0.6": "debian:bookworm",
+    "1.1.3": "debian:trixie",
+}
+
+
+def declared_floor():
+    """The version `debian/control` says is required, which is the only authority on it."""
+    have("debian/latest")
+    control, _ = git("show", "debian/latest:debian/control")
+    found = re.search(r"nftables\s*\(\s*>=\s*([0-9][0-9.]*)\s*\)", control)
+    assert found, "debian/control declares no nftables floor, which is the other half of ch5-6"
+    return found.group(1)
+
+
+def floor_image(version):
+    """A cached image with that nft installed, built once and reused.
+
+    Built rather than pulled-and-apt-installed every run, because a drill that takes a minute is a
+    drill somebody starts skipping.
+    """
+    base = NFT_IMAGES.get(version)
+    if base is None:
+        pytest.skip(f"no image known to carry nft {version} — add one to NFT_IMAGES, or this "
+                    f"cannot check the floor debian/control declares")
+    tag = f"afirewall-nft-floor:{version}"
+    exists = subprocess.run(["docker", "image", "inspect", tag],
+                            capture_output=True).returncode == 0
+    if not exists:
+        build = subprocess.run(
+            ["docker", "build", "-q", "-t", tag, "-"],
+            input=f"FROM {base}\nRUN apt-get -qq update && "
+                  f"DEBIAN_FRONTEND=noninteractive apt-get -qq install -y nftables\n",
+            capture_output=True, encoding="UTF-8", timeout=600)
+        if build.returncode != 0:
+            pytest.skip(f"cannot build an nft {version} image: {build.stderr.strip()[:200]}")
+    return tag
+
+
+@pytest.mark.proves("ch5-6", depth="integration")
+def test_the_ruleset_parses_on_the_nft_the_package_demands(tmp_path):
+    """THE MEASUREMENT, KEPT RATHER THAN RECORDED. ch5-U1 was settled once by hand and that made
+    `debian/control` right on one afternoon. Every template added since - by `afirewall
+    add-service`, or by whatever the namespace work needs - can raise the floor without anything
+    noticing: the templates render, this machine's nft accepts them, and the constraint goes on
+    claiming a version nobody has retested.
+
+    So the floor is re-measured rather than remembered. A red here is not an error to explain away;
+    it is the question `ch5-6` exists to ask, and it has exactly two honest answers - change the
+    template, or raise the floor in debian/control.
+
+    The reading that produced the current number is worth keeping in view: 0.9.3 and 0.9.8 fail,
+    1.0.2 and later parse, and the construct that draws the line is `tcp flags urg / urg,ack`
+    rather than any of `typeof`, `ct count`, dynamic sets or `meta skuid`, all of which parse on
+    0.9.3. Nothing about which feature matters was guessable from reading the templates.
+    """
+    if not shutil.which("docker"):
+        pytest.skip("docker is not available, so no other nft can be reached from here")
+    version = declared_floor()
+    image = floor_image(version)
+
+    import sys
+    sys.path.insert(0, str(ROOT / "test"))
+    from test_afirewall import render_everything
+    for family in ("ipv4", "ipv6"):
+        (tmp_path / f"{family}.nft").write_text(render_everything(family))
+    (tmp_path).chmod(0o755)
+
+    complaints = []
+    for family in ("ipv4", "ipv6"):
+        done = subprocess.run(
+            ["docker", "run", "--rm", "-v", f"{tmp_path}:/r:ro", image,
+             "nft", "-c", "-f", f"/r/{family}.nft"],
+            capture_output=True, encoding="UTF-8", timeout=300)
+        # `User does not exist` is the CONTAINER lacking a service account, not a version problem -
+        # a real host has disable_services_missing_their_users() remove those before generation.
+        # Filtering it out is why this asserts on syntax rather than on a clean exit.
+        for line in done.stderr.splitlines():
+            if "Error:" in line and "User does not exist" not in line:
+                complaints.append(f"{family}: {line.strip()}")
+
+    assert not complaints, (
+        f"the generated ruleset does not parse on nft {version}, which is what "
+        f"`Depends: nftables (>= {version})` promises a host it will work on:\n  "
+        + "\n  ".join(complaints[:6])
+        + f"\n\nTwo answers and no third: change the template so it parses on {version}, or raise "
+          "the floor in debian/control to the oldest version that does. Raising it drops support "
+          "for hosts that were working; changing the template keeps them.")
 
 
 @pytest.mark.proves("ch5-7", depth="structural")

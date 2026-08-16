@@ -117,13 +117,18 @@ stays rebuildable (`ch5-7`).
   resolve the merge or reset `upstream/latest` to master outright is, because the second discards a
   history that the release tags no longer need. Anchored to `ch5-3`.
 
-- **ch5-U4 — the floor is measured once and can move under any template.** `ch5-U1` established
-  `>= 1.0.2` for the ruleset as it stands on 2026-08-16. A service added by `afirewall add-service`
-  (`ch2`), or anything the namespace work needs (`ch4`), can require newer syntax and nothing would
-  notice: the templates would render, this workstation's nft would accept them, and the constraint
-  in `debian/control` would keep claiming 1.0.2. The reading is cheap and containerised, so the
-  question is whether it belongs in the release sequence or in whatever runs the drills. Anchored
-  to `ch5-6`.
+- **ch5-U4 — CLOSED BY A DRILL RATHER THAN BY A DECISION.** The worry was that `ch5-U1` measured
+  the floor once, so a template added later could raise it while `debian/control` went on claiming
+  1.0.2 — the templates would render, this workstation's nft would accept them, and nothing would
+  say otherwise. It is now re-measured on every run: the drill reads the floor out of
+  `debian/control`, obtains an nft of that exact version, renders a full ruleset and parses it
+  there. **The floor is checked against the templates rather than remembered about them.**
+
+  A red is not a fault to explain away, it is the question `ch5-6` exists to ask, and it has two
+  honest answers and no third: change the template so it parses at the declared floor, or raise the
+  floor to the oldest version that takes the template. Raising it drops hosts that were working;
+  changing the template keeps them. The drill says exactly that when it fires, and it was proved to
+  fire — the floor was set to 0.9.8 deliberately and it named the five offending lines.
 
 - **ch5-U3 — nothing decides when a second line actually starts.** `ch5-5` says a branch is for
   maintaining two lines at once and `ch5-6` says nft is what will force one, but not at which point:
