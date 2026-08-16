@@ -156,6 +156,75 @@ def get_external_network(device, address, family):
          return '{a}/{p}'.format(a=info['local'], p=info['prefixlen'])
    return None
 
+#: Where the operator states which interface faces a network they do not trust. A FILE IN THE BASE
+#: DIRECTORY, and that is decided by how it has to persist: it must load and unload with the rules,
+#: so it has to be an input to generation. A command-line flag does not survive netfilter-persistent
+#: invoking this at boot with no arguments, and a unit drop-in or an environment file would be a
+#: second persistence mechanism beside the one this package already has.
+#:
+#: Not a key in afirewall.conf, and the reason is the consumer rather than the format: that file is
+#: composed by appending service flags, and a configuration manager restores one baseline shared by
+#: every host before each run. A per-host fact there is erased by that restore every converge.
+INTERFACES_FILE = 'interfaces.conf'
+
+def get_stated_external_device(base_directory):
+   """The interface the operator named, or None if they named none.
+
+   Silence means discover, which is what keeps a single-NIC host working with no configuration at
+   all - and that host is what this package was written for."""
+   path = base_directory + '/' + INTERFACES_FILE
+   if not os.path.exists(path):
+      return None
+   stated = []
+   with open(path) as file:
+      for line in file:
+         li = line.split('#')[0].strip()
+         if not li:
+            continue
+         # A CLOSED VOCABULARY, ON PURPOSE, AND ONE THAT GROWS BY ADDING ROLES. The format is
+         # `<role>: <device>`, so the day a namespace needs an interface named as something other
+         # than external - the host end of a veth, say - that is a new role rather than a new file
+         # shape. Refusing an unknown one now is what makes adding one a visible decision instead
+         # of something that quietly started working.
+         if not li.startswith('external:'):
+            sys.exit(path + ': `' + li.split(':')[0].strip() + '` is not a role this version knows. '
+                     'The only one is `external`. The format is `<role>: <device>` so more can be '
+                     'added, but a role that is not recognised is refused rather than ignored.')
+         device = li.split(':', 1)[1].strip()
+         if device:
+            stated.append(device)
+   if not stated:
+      return None
+   if len(stated) > 1:
+      sys.exit(path + ' names more than one external interface ' + str(stated) + '. Only one is '
+               'supported: the rules are generated against a single external device, and silently '
+               'using the first would be worse than refusing.')
+   device = stated[0]
+   # REFUSED RATHER THAN FALLEN BACK FROM. A fallback to discovery would turn a typo into a firewall
+   # that protects a different interface than the one it was told to - quiet, plausible, and exactly
+   # the failure that inferring the interface at all was criticised for.
+   if not ip_json('link', 'show', device):
+      sys.exit('No such device on this host: ' + device + ' (named in ' + path + '). Nothing is '
+               'generated - a stated interface that is not there is a typo, not a reason to guess.')
+   return device
+
+def get_external_interface_by_name(device, family):
+   """Build an Interface for a device the operator named, per family.
+
+   A device with no address in a family gets no ruleset for it, which is the same answer discovery
+   gives when there is no route - a host without IPv6 is not a host with a broken IPv6 firewall."""
+   wanted = 'inet' if family == Family.IPV4 else 'inet6'
+   for link in ip_json('addr', 'show', device):
+      for info in link.get('addr_info', []):
+         if info.get('family') != wanted or info.get('scope') == 'link':
+            continue
+         try:
+            return Interface(info['local'], '{a}/{p}'.format(a=info['local'], p=info['prefixlen']),
+                             device, family)
+         except ValueError:
+            return None
+   return None
+
 def get_external_interface(destination, family):
    """Which device and address this host reaches the outside on, per family."""
    routes = ip_json('route', 'get', 'to', destination)
@@ -320,19 +389,27 @@ def disable_services_missing_their_users(base_directory, config):
                break
    return config
 
-def get_interfaces():
-   interfaces = []
-   interface = get_external_ipv4_interface(args.ipv4dest)
-   if interface != None:
-      interfaces.append(interface)
-   else:
-      print('Warning: no IPv4 interface found. There was no valid route to ' + args.ipv4dest)
-   interface = get_external_ipv6_interface(args.ipv6dest)
-   if interface != None:
-      interfaces.append(interface)
-   else:
-      print('Warning: no IPv6 interface found. There was no valid route to ' + args.ipv6dest)
+def get_interfaces(base_directory):
+   """Which interfaces the rules are generated against.
 
+   STATED FIRST, DISCOVERED OTHERWISE. Trust is a policy statement about a network and the routing
+   table is not a trust database: the default route says where packets go, not which network is
+   hostile. Those agree on a single-NIC host and stop agreeing the moment a full-tunnel VPN moves
+   the default route onto an overlay - where a private source address is entirely legitimate, so
+   the anti-spoofing rules would be applied to the one interface they must not be."""
+   stated = get_stated_external_device(base_directory)
+   interfaces = []
+   for family, destination in ((Family.IPV4, args.ipv4dest), (Family.IPV6, args.ipv6dest)):
+      if stated is not None:
+         interface = get_external_interface_by_name(stated, family)
+         absent = stated + ' has no ' + family.name + ' address'
+      else:
+         interface = get_external_interface(destination, family)
+         absent = 'there was no valid route to ' + destination
+      if interface is not None:
+         interfaces.append(interface)
+      else:
+         warn('no ' + family.name + ' interface found: ' + absent)
    return interfaces
 
 if __name__ == "__main__":
@@ -348,7 +425,7 @@ if __name__ == "__main__":
    if os.geteuid() != 0: sys.exit('Root permissions required.')
 
    config = disable_services_missing_their_users(args.basedir, get_configuration())
-   interfaces = get_interfaces()
+   interfaces = get_interfaces(args.basedir)
 
    match args.command:
       case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':

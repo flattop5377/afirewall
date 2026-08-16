@@ -111,16 +111,28 @@ def test_a_named_interface_that_is_not_there_is_refused():
 
 
 @pytest.mark.proves("ch6-7", depth="structural")
-def test_something_holds_when_the_statement_is_wrong():
-    """ufw's check, taken alongside rather than instead: a drop for anything not addressed to this
-    host needs no interface named. It catches nothing the spoof list catches and the spoof list
-    catches nothing it catches — they fail in different directions."""
-    found = [p.name for p in (ROOT / "templates").rglob("base.rules")
-             if "fib daddr type local" in p.read_text()]
-    assert len(found) == 2, (
-        "no base ruleset drops packets that are not addressed to this host. That check needs no "
-        "interface to be named, so it is the one thing that still holds when the stated interface "
-        f"is wrong. Found in {len(found)} of 2 families.")
+def test_a_protection_exists_that_names_no_interface():
+    """ufw's check, taken alongside rather than instead of the spoof list.
+
+    THE CLAIM IS NARROWER THAN AN EARLIER DRAFT SAID. Writing the rule is what showed it: this does
+    not compensate for a wrong external interface, because a spoofed packet is still addressed to
+    us and would pass here. What is true is that it needs no interface named at all, so it is a
+    protection whose correctness does not depend on the trust statement being right — two
+    protections, not a protection and its fallback.
+    """
+    families = sorted(p for p in (ROOT / "templates").rglob("base.rules")
+                      if "fib daddr type" in p.read_text() and "NOT_LOCAL" in p.read_text())
+    assert len(families) == 2, (
+        "a base ruleset does not drop packets that were never addressed to this host. The check "
+        f"names no interface, so nothing about it can be got wrong by naming one. Found in "
+        f"{len(families)} of 2 families.")
+    # AND COUNTED, per ch1-9. On a normal host the routing decision has already sent everything
+    # addressed elsewhere to the forward hook, so this may never fire - and a drop rule that
+    # matches nothing looks exactly like one that is working.
+    for path in families:
+        assert "NUMBER_OF_NOT_LOCAL_DROPPED" in path.read_text(), (
+            f"{path.name} drops not-local traffic without a named counter, so whether the rule has "
+            "ever fired cannot be asked")
 
 
 @pytest.mark.proves("ch6-8", depth="integration")

@@ -42,7 +42,7 @@ flowchart TD
     SEP[ch6-4 · a file of its own, because a host fact<br/>cannot live in a composed baseline]:::process
     GUESS[ch6-5 · no · discover it, so one NIC<br/>needs no configuration at all]:::process
     REFUSE[ch6-6 · a named interface that is not there<br/>is refused, not quietly ignored]:::process
-    ANYWAY[ch6-7 · and something holds even when<br/>the statement is wrong]:::process
+    ANYWAY[ch6-7 · and one protection names<br/>no interface at all]:::process
     OUT([ch6-8 · anti-spoofing applied where<br/>the operator meant it]):::output
 
     HOST --> STATED
@@ -70,7 +70,7 @@ flowchart TD
 | `ch6-4` | a file of its own | **It cannot go in `afirewall.conf`, and the reason is the consumer rather than the format.** That file is composed by appending service flags — `ch1-2` — and a configuration manager restores **one baseline shared by every host** before each run so the end state follows from which roles ran. The external interface is a *per-host* fact: put it there and either the restore erases it every converge, or the baseline stops being one file. `firewalld` reaches the same separation from the other direction, keeping zone assignment out of the service definitions |
 | `ch6-5` | no · discover it | **A host with one interface must still need no configuration.** That is what the package is for, and the discovery it already does is right for it — measured right on eight hosts out of eight. Silence means *use the default route*, which keeps every existing installation working unchanged and makes this feature cost nothing to the people who do not need it |
 | `ch6-6` | a named interface that is not there is refused | **The failure mode of a wrong statement must not be a silently misapplied rule**, which is the entire complaint against guessing. If the file names an interface the host does not have, generation stops and says so — it does not fall back to discovery, because a fallback would turn a typo into the exact silent wrongness this chapter exists to remove. Loud and refusing beats quiet and plausible |
-| `ch6-7` | and something holds even when the statement is wrong | **`ufw`'s check, taken alongside rather than instead.** A drop for anything not addressed to this host — `fib daddr type local` in nft, what `addrtype --dst-type LOCAL` does for ufw — needs no interface named and holds whatever the statement says. It catches nothing the spoof list catches and the spoof list catches nothing it catches: one asks whether a source could have arrived here, the other whether the packet was ever for us. **They fail in different directions, which is the argument for both** |
+| `ch6-7` | and one protection names no interface at all | **`ufw`'s check, taken alongside rather than instead** — a drop for anything not addressed to this host, `fib daddr type` in nft, what `addrtype --dst-type LOCAL` does for ufw. **The claim here is narrower than this row first made it**, and writing the rule is what showed that: it does *not* compensate for a wrongly stated interface, because a spoofed packet is still addressed to us and passes it. What is true is that it needs no interface named, so its correctness does not depend on the trust statement being right — two protections, not a protection and its fallback. One asks whether a source could have arrived where it did; the other whether the packet was ever for us. It carries a named counter, because on a normal host the routing decision has already sent everything addressed elsewhere to the forward hook, and a drop rule that never fires looks exactly like one that is working |
 | `ch6-8` | anti-spoofing applied where the operator meant it | **The measure is that a host with a tunnel, a bridge and a NIC filters the NIC** — not that the configuration is richer. A firewall that protects the wrong interface is worse than one that protects none, because the first is believed |
 
 ## Input → process → output
@@ -82,17 +82,29 @@ generate time so it persists exactly as the rules do (`ch6-3`), from a file of i
 from the composed service configuration (`ch6-4`). **If they have not**, it is discovered from the
 default route, so a single-NIC host needs no configuration at all (`ch6-5`). A named interface that
 does not exist stops the run rather than falling back (`ch6-6`), and a check that needs no interface
-named holds either way (`ch6-7`).
+named runs beside all of it (`ch6-7`).
 
 **Output** — anti-spoofing applied where the operator meant it (`ch6-8`).
 
 ## Open unknowns
 
-- **ch6-U1 — one external interface or several.** A host with two uplinks has two, and the file
-  format should probably be a list from the start rather than gain one later. What is undecided is
-  whether anything beyond `external` is worth naming — `firewalld` has nine zones and this package
-  has one distinction, and the gap between them is a design this chapter deliberately does not
-  take. Anchored to `ch6-4`.
+- **ch6-U1 — one external interface or several, and what else is worth naming.** A host with two
+  uplinks has two, and today more than one is refused rather than silently reduced to the first.
+  What is undecided is the vocabulary: `firewalld` has nine zones and this package has one
+  distinction, and the gap between them is a design this chapter deliberately does not take.
+
+  **Namespaces are where that gets answered, not here** (`ch4`). A service in a namespace is reached
+  by *forwarding* from the external NIC to the host end of a veth, so the host acquires interfaces
+  whose role is neither external nor irrelevant — and a model that only asks "which one is external"
+  has nothing to call them. Two things were done now so that chapter does not have to undo them:
+  the file is `<role>: <device>` rather than a bare list of devices, so another role is additive
+  rather than a reshape; and an unrecognised role is refused with a message saying the vocabulary is
+  *closed*, not that the line is wrong — so adding one is a visible decision instead of something
+  that quietly starts working.
+
+  The discovery helper needs nothing either. `ip_json` passes its arguments through, so
+  `ip_json('-n', <namespace>, 'route', 'get', ...)` already works: asking inside a namespace is a
+  flag, not a rewrite. Anchored to `ch6-4`.
 
 - **ch6-U2 — nothing here has been observed applying rules to the wrong interface.** The failure is
   argued from the routing table and from what the templates do with `EXTERNAL_DEVICE`, not from a
