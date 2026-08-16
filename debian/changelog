@@ -1,3 +1,17 @@
+afirewall (20260816.0.0-2) unstable; urgency=medium
+
+  * Depend on iproute2. afirewall runs `ip route get` to discover the external
+    interface and address, and exits if `ip` is not executable - so on a host
+    without iproute2 the package installed cleanly and then refused to do
+    anything. iproute2 is priority important and present on any normal Debian
+    system, which is why this was never seen; it was found by installing the
+    package into a minimal container and running it.
+  * No change to the source. This is a packaging fix and carries a Debian
+    revision rather than an invented upstream version, which is what the
+    non-native format from 20260816.0.0-1 makes possible.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Sun, 16 Aug 2026 09:31:58 -0600
+
 afirewall (20260816.0.0-1) unstable; urgency=medium
 
   * The IPv6 ruleset failed to load entirely on any host with inbound.tcp8000
