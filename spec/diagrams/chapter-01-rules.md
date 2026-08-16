@@ -134,6 +134,31 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   it. Whether the answer is a sentence in the README or a `forward` chain is undecided; the
   sentence is owed either way. Anchored to `ch1-1`.
 
+- **ch1-U9 — "external" is a trust judgement and the routing table is not a trust database.**
+  The firewall finds its external interface by asking which one the default route uses. Measured
+  across eight hosts on 2026-08-16 it is right on all eight — and that is the configuration being
+  agreeable rather than the method being sound.
+
+  **A full-tunnel VPN inverts it, and every one of those hosts has a `wg0` sitting there.** One
+  `AllowedIPs = 0.0.0.0/0` is all it takes: the default route moves to the tunnel, discovery
+  returns `wg0` as external, and the anti-spoofing rules are then applied to the *overlay* — where
+  a private source is entirely legitimate — and **not** to the physical NIC, where it would be
+  forged. Backwards, and with nothing anywhere to say so. It is the same failure as the IPv6 device
+  regex arriving through a different door: a derived fact that looks right until the day it is not.
+
+  **And only one interface is protected at all.** Those hosts carry between two and five —
+  `ens6`, `wg0`, `docker0`, bridges, veths — and the `SPOOFING` chain names exactly one of them.
+  For the tunnel that is deliberate (`iifname` was added precisely so spoof drops stopped killing
+  what `wg0` carried), but the model it encodes is "a host has one external interface", and the
+  measurement says a host here has several with different trust levels.
+
+  What would settle it is not a better heuristic. Deriving it from "which address is globally
+  routable" fails on a NAT'd VPS, whose only interface is external and privately addressed. **The
+  answer is to let it be stated** — the operator knows which network they do not trust, and the
+  kernel cannot — with discovery kept as the default for the single-NIC case it was written for.
+  Where that statement lives is the open part: `ch1-2` keeps `afirewall.conf` a flat list of
+  service flags, so it is not a config key without changing what that file is. Anchored to `ch1-1`.
+
 - **ch1-U7 — `source-quench` is still accepted and RFC 6633 deprecated it.** Routers no longer send
   it and hosts are told to ignore it, so the rule can only ever admit something forged. It went
   unremarked while the timestamp, information and address-mask messages were removed, because those
