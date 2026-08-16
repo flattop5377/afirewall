@@ -49,3 +49,14 @@ mutation = false
 "ch3-4" = "structural"
 "ch3-5" = "structural"
 "ch3-6" = "structural"
+# CHAPTER 5 IS THE SHAPE OF THE REPOSITORY, which is exactly what a release depends on and
+# exactly what a written procedure cannot keep true. Whether a branch has commits nobody else has,
+# whether packaging sits where it belongs, whether a release is tagged in both places - all read
+# from git. What is NOT settled here is the nft floor's actual number (ch5-U1, needs an old nft)
+# and whether a real release runs without a question (ch5-U2).
+"ch5-2" = "structural"
+"ch5-3" = "structural"
+"ch5-4" = "structural"
+"ch5-5" = "structural"
+"ch5-6" = "structural"
+"ch5-7" = "structural"
