@@ -285,28 +285,33 @@ def test_the_generated_ruleset_outlives_a_reboot():
 
 
 @pytest.mark.proves("ch1-10", depth="structural")
-def test_start_restores_and_only_reload_rebuilds():
-    """The verb netfilter-persistent calls at boot must not be the verb that needs the network.
+def test_the_boot_verb_restores_and_never_rebuilds():
+    """The verb netfilter-persistent sends at boot must not be one that needs the network.
 
-    Restoring a saved ruleset is what this is a plugin FOR — every other plugin netfilter-persistent
-    runs works that way, and generating is what happens when the configuration changes rather than
-    every time the machine starts.
+    netfilter-persistent runs its plugins with `run-parts -a <verb>` and sends only `start`, `save`
+    and `flush` — its own `reload` and `restart` both call the plugin with `start`. So `start` is
+    what arrives at boot AND what `systemctl restart netfilter-persistent` produces, and there is no
+    verb it can send that means rebuild. It is aliased to `restore` here because a start that does
+    not start reads as a mistake otherwise.
+
+    It must not generate even as a fallback. A verb that usually restores and occasionally rebuilds
+    behaves according to state the caller cannot see, which is the shape of the fault this subject
+    exists because of.
     """
     cases = re.findall(r"^\s*case ([^:]+):\n((?:(?!^\s*case ).*\n)*)", SOURCE, re.M)
     bodies = {label.strip(): body for label, body in cases}
-    start = next((b for lbl, b in bodies.items() if lbl == "'start'"), None)
-    assert start is not None, (
-        "'start' no longer has a case of its own, so it shares whatever the other verbs do — which "
-        "is how it came to rebuild at boot")
-    if "generate()" in start:
-        assert re.search(r"if not glob\.glob\(GENERATED[^\n]*\n\s*generate\(\)", start), (
-            "'start' generates without first checking for a saved ruleset. At boot there is no "
-            "network, so generation finds no interface and the host is left bare — the only reason "
-            "to generate here is a first install, where a person is running the command.")
-    for verb in ("'restart' | 'reload' | 'force-reload'",):
-        assert "generate()" in bodies.get(verb, ""), (
-            f"{verb} no longer regenerates, so a configuration change would never reach the "
-            "kernel and a saved ruleset naming an old address would never be corrected")
+    restore = next((b for lbl, b in bodies.items() if "'start'" in lbl), None)
+    assert restore is not None, "no case handles 'start', which is the verb netfilter-persistent sends"
+    assert "'restore'" in next(lbl for lbl in bodies if "'start'" in lbl), (
+        "'start' is not aliased to 'restore'. The ABI name has to stay, but a start that does not "
+        "start needs the honest name beside it or the next reader corrects the wrong thing.")
+    assert "generate()" not in restore, (
+        "the boot verb generates. At boot there is no network, so generation finds no interface "
+        "and the host is left bare — restoring the saved ruleset is the only thing that can work.")
+    rebuild = next((b for lbl, b in bodies.items() if "'regenerate'" in lbl), None)
+    assert rebuild is not None and "generate()" in rebuild, (
+        "nothing regenerates, so a configuration change would never reach the kernel and a saved "
+        "ruleset naming an old address would never be corrected")
 
 
 @pytest.mark.proves("ch1-10", depth="structural")

@@ -291,7 +291,22 @@ def get_external_ipv6_interface(destination):
 
 def get_parser():
    parser = argparse.ArgumentParser(description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux')
-   parser.add_argument('command', choices=['start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service'], help='Manage netfilter rules for a firewall, or add a service it has no template for')
+   # TWO REAL ACTIONS, AND SEVEN NAMES FOR THEM, BECAUSE ONLY TWO OF THE NAMES ARE OURS.
+   #
+   # What this program does is `restore` a saved ruleset or `regenerate` one from the
+   # configuration. Those are the words that say what happens, and they are the ones to reach for.
+   #
+   # `start`, `save` and `flush` are netfilter-persistent's, not ours: it runs the plugins in
+   # /usr/share/netfilter-persistent/plugins.d with `run-parts -a <verb>`, and its own `reload` and
+   # `restart` both call the plugin with `start` — so `start` is what arrives at boot AND what
+   # `systemctl restart netfilter-persistent` produces, and there is no verb it can send that means
+   # "rebuild". `start` therefore means restore, which reads oddly and is the contract rather than a
+   # choice. Renaming it would simply stop the plugin working.
+   #
+   # `restart`, `reload` and `force-reload` are never sent by netfilter-persistent at all. They
+   # exist here for a person or a configuration manager, so they are aliases of `regenerate`, which
+   # is what somebody typing them after editing afirewall.conf means.
+   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two')
    parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
@@ -500,26 +515,32 @@ if __name__ == "__main__":
    def load():
       saved = sorted(glob.glob(GENERATED + '/ipv[46].nft'))
       if not saved:
-         sys.exit('There is no saved ruleset in ' + GENERATED + ' and none was generated, so '
-                  'there is nothing to load. Run `afirewall reload` once the network is up.')
+         sys.exit('There is no saved ruleset in ' + GENERATED + ', so there is nothing to restore '
+                  'and this host has no firewall. Nothing has been changed. Run `afirewall '
+                  'regenerate` to build one from ' + args.basedir + '/afirewall.conf - it needs '
+                  'the network to be up, because the external interface is found by routing '
+                  'lookup unless it is named in ' + args.basedir + '/' + INTERFACES_FILE + '.')
       stop()
       for file in saved:
          print('Loading rules from ' + file)
          start(file)
 
    match args.command:
-      # RESTORE, DO NOT REBUILD. This is the verb netfilter-persistent calls at boot, and at boot
-      # there is no network to discover an interface on. Restoring a saved ruleset is what this
-      # plugin exists to do; rebuilding it here is what left hosts bare. A host with no saved
-      # ruleset - a first install - still has to build one, and by then the network is up because
-      # a person is running the command.
-      case 'start':
-         if not glob.glob(GENERATED + '/ipv[46].nft'):
-            generate()
+      # RESTORE, AND ONLY RESTORE. `start` is netfilter-persistent's name for this and arrives at
+      # boot, when there is no network to discover an interface on - so restoring a saved ruleset
+      # is the only thing that can work here, and rebuilding is what left hosts bare.
+      #
+      # IT DOES NOT QUIETLY GENERATE WHEN THERE IS NOTHING SAVED, and that restraint is the point.
+      # A verb that usually restores and occasionally rebuilds is one whose behaviour depends on
+      # state the caller cannot see, which is the shape of the bug this whole change exists to fix.
+      # Nothing saved is a real fault - the package was installed and never configured - so it says
+      # so and exits non-zero rather than doing the other thing. Packaging is where that gap is
+      # closed: postinst regenerates once, and every boot after it restores.
+      case 'restore' | 'start':
          load()
-      # THE CONFIGURATION HAS CHANGED, OR MIGHT HAVE. Everything that is not a boot rebuilds, which
-      # is also what corrects a saved ruleset that names an address the host no longer has.
-      case 'restart' | 'reload' | 'force-reload':
+      # REGENERATE. The configuration has changed, or might have. This is also what corrects a
+      # saved ruleset naming an address the host no longer has, which is the cost of persisting.
+      case 'regenerate' | 'restart' | 'reload' | 'force-reload':
          generate()
          load()
       # SAVE WRITES THE RULESET DOWN AND DOES NOT LOAD IT, which is what the verb means to
