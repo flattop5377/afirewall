@@ -20,6 +20,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
 {% if inbound.wireguard %}{% include 'ipv6/inbound/wireguard.rules' %}{% endif %}
 {% if inbound.postgres %}{% include 'ipv6/inbound/postgres.rules' %}{% endif %}
+{% if inbound.udp51821 %}{% include 'ipv6/inbound/udp51821.rules' %}{% endif %}
 
 
   #############################################################################
@@ -52,6 +53,7 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
 {% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
 {% if inbound.postgres %}    tcp dport 5432 jump ACCEPT_POSTGRES{% endif %}
+{% if inbound.udp51821 %}    udp dport 51821 jump ACCEPT_UDP51821{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -325,6 +327,7 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
 {% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
 {% if inbound.postgres %}    tcp sport 5432 ct state established accept{% endif %}
+{% if inbound.udp51821 %}    udp sport 51821 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
 {% if outbound.dns %}    udp dport 53 jump ACCEPT_DNS{% endif %}
