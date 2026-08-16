@@ -24,13 +24,30 @@ everything you did not override moves forward with the package.  Please suggest 
 like added by opening an issue.
 
 .PP
-The generated ruleset is written to \fI/run/afirewall\fR.  It is derived from the configuration and
-rebuilt on every start, so it is not configuration and is not preserved across a reboot - which is
-also what makes it impossible to load a ruleset that no longer matches the configuration.
+The generated ruleset is written to \fI/var/lib/afirewall\fR.  It is derived from the configuration
+rather than being configuration itself, and it persists, because restoring a saved ruleset at boot is
+what \fBnetfilter\-persistent\fR(8) exists to do.  Rebuilding it at boot cannot work: the plugin runs
+before the network is configured, and the external interface is found by routing lookup unless it is
+named in \fIinterfaces.conf\fR.  A saved ruleset names the interface's address, so a host that boots on
+a new one restores rules describing the old; \fBregenerate\fR corrects that once the network is up.
 
 .SH OPTIONS
-.OP "start, restart, reload, force-reload, save"
-first stop the firewall, which flushes all the rules and drops all the firewall tables restoring the netfilter default (which is probably to allow all traffic), then start the firewall
+.OP "restore, start"
+load the saved ruleset from \fI/var/lib/afirewall\fR without rebuilding it.  This is what runs at boot.
+\fBstart\fR is \fBnetfilter\-persistent\fR(8)'s name for it and cannot be renamed - it runs its plugins
+with \fBrun\-parts \-a\fR and sends only \fBstart\fR, \fBsave\fR and \fBflush\fR, mapping its own
+\fBreload\fR and \fBrestart\fR onto \fBstart\fR as well.  If nothing has been saved this refuses and
+changes nothing, rather than rebuilding: the only safe thing to do with a ruleset you cannot replace is
+leave it alone.
+
+.OP "regenerate, restart, reload, force-reload"
+rebuild the ruleset from the configuration, then load it.  Run this after editing
+\fIafirewall.conf\fR.  It needs the network to be up unless the interface is named in
+\fIinterfaces.conf\fR.  If no external interface is found in any address family it refuses and leaves
+whatever is loaded alone.
+
+.OP "save"
+rebuild the ruleset and write it down without loading it
 
 .OP "stop, flush"
 stop the firewall restoring the netfilter default (which is probably to allow all traffic)
