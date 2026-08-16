@@ -30,6 +30,17 @@
   # This accepts IPv4 SSH traffix
   #
   chain ACCEPT_SSH {
+    ##
+    # LIMIT POSTURE: instrument — the administrative path is the one service an operator cannot
+    # afford to lose, and a limit that drops is a limit an attacker aims.
+    #
+    # A forged SYN carrying the controller's address costs nothing to send and spends the
+    # controller's allowance for the 900s this set holds it, which locks administration out
+    # of the host. Keep a console route, because ssh can be lost; it should not
+    # be lost to our own rule. What actually refuses an ssh attacker is fail2ban with the
+    # nftables banaction (see README), which decides on evidence in the log rather than on a
+    # source address anyone can write.
+    #
       ##
       # Rate limit new connections per source ip address
       #

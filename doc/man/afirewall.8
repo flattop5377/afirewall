@@ -1,4 +1,4 @@
-.TH man 8 "25 Apr 2025" "20240921.0.3" "afirewall man page"
+.TH afirewall 8 "16 Aug 2026" "20260816.0.0" "afirewall manual"
 
 .SH NAME
 afirewall \- A pure NetFilter Firewall wrapper for Linux
@@ -32,6 +32,24 @@ stop the firewall restoring the netfilter default (which is probably to allow al
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall
 
+.OP "add-service NAME"
+writes a new rules template for a service the package does not ship, in both address families, and
+adds its key to the configuration file disabled.  Requires \-\-inbound or \-\-outbound, at least one
+\-\-tcp or \-\-udp port, and \-\-posture with \-\-because.  This is the one command that needs no
+root: it writes into the template tree and never touches the kernel.
+
+.OP "\-\-inbound, \-\-outbound"
+add-service: whether the host answers on these ports or reaches out on them
+
+.OP "\-\-tcp PORT, \-\-udp PORT"
+add-service: a port the service uses.  Repeatable, and both may be given, because a service is not always one port
+
+.OP "\-\-posture {enforce,instrument,none}"
+add-service: what a limit does with traffic over it.  \fBenforce\fR refuses the excess, \fBinstrument\fR counts it and admits it, \fBnone\fR writes no limit.  There is no default: a rule whose posture nobody chose reads exactly like one somebody argued for
+
+.OP "\-\-because TEXT"
+add-service: why that posture.  Recorded beside the rule so the next reader inherits an argument rather than a habit, and required for the same reason
+
 .OP "-nft"
 the full path to nft, default /usr/sbin/nft
 
@@ -44,13 +62,18 @@ destination used to find the external ipv4 address and device, default 8.8.8.8
 .OP "-ipv6dest"
 destination used to find the external ipv6 address and device, default 2001:4860:4860:0:0:0:0:8888
 
-.OP "-basedir"
+.OP "-b, --basedir"
 path to the configuration file, templates, lists, and output of nft, default /etc/afirewall
 
 .SH SEE ALSO
+.BR nft (8),
+.BR nftables (8),
+.BR netfilter-persistent (8)
+.PP
+The configuration file is /etc/afirewall/afirewall.conf and documents itself in its own comments.
 
 .SH BUGS
 https://github.com/flattop5377/afirewall/issues
 
 .SH AUTHOR
-Flattop (flattop5377@proton.me)
+Flattop5377 (Flattop5377@proton.me)

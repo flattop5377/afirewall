@@ -37,6 +37,8 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.dirport %}{% include 'ipv4/inbound/dirport.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv4/inbound/btc.rules' %}{% endif %}
 {% if inbound.wireguard %}{% include 'ipv4/inbound/wireguard.rules' %}{% endif %}
+{% if inbound.postgres %}{% include 'ipv4/inbound/postgres.rules' %}{% endif %}
+{% if inbound.udp51821 %}{% include 'ipv4/inbound/udp51821.rules' %}{% endif %}
 
 
   #############################################################################
@@ -68,6 +70,8 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.dirport %}    tcp dport 9030 jump ACCEPT_DIRPORT{% endif %}
 {% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
 {% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
+{% if inbound.postgres %}    tcp dport 5432 jump ACCEPT_POSTGRES{% endif %}
+{% if inbound.udp51821 %}    udp dport 51821 jump ACCEPT_UDP51821{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -111,20 +115,52 @@ table ip a-firewall-inbound-ipv4 {
   #
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+  ##
+  #
+  # LIMIT POSTURE: enforce — and it enforces by FALLING THROUGH, which no other rule here
+  # does.
+  #
+  # The limit below is a match condition rather than a counted-and-ignored one: over
+  # 10/second the rule stops matching, nothing beneath it accepts that packet, and the chain
+  # policy drops it. So these rules refuse excess without the word `drop` appearing
+  # anywhere, and a reader who has learned the `continue` form beside them will read this
+  # backwards.
+  #
+  # Enforced because ICMP carries no service: the collateral of a wrong drop is diagnostics
+  # rather than a counterparty, so nothing here fails the replaceability test the service
+  # templates apply.
+  #
+  # LIMITED RATHER THAN CLOSED, AND THAT IS A DECISION ABOUT WHO INSTALLS THIS. Other people
+  # run this package, and a default that cripples network discovery or troubleshooting is a
+  # worse default than one that admits some noise. The budget is generous against real work -
+  # `ping` sends 1/second, and a traceroute's `time-exceeded` replies each arrive from a
+  # DIFFERENT router, so a per-source bucket of 10/second is not reached by an operator
+  # diagnosing something. It is reached by `ping -f`, which is the traffic it is for.
+  #
+  # The message that must not share this budget is carved out below.
+  #
+  # WHAT IS NOT HERE: `source-quench`. RFC 6633 deprecated it in 2012 - routers stopped sending it
+  # and hosts are told to ignore it - so a rule accepting it could only ever admit something
+  # forged, and the budget it took was taken from the diagnostics that do arrive.
+  #
   chain VALID_ICMP {
+    ##
+    # PATH-MTU DISCOVERY IS NOT A DIAGNOSTIC, so it is not in the bucket the diagnostics share.
+    #
+    # `fragmentation-needed` is a code of `destination-unreachable`, and the rule below limits
+    # that type as a whole - so without this line the one message a black-holed TCP connection
+    # depends on competes for a budget with every ping and traceroute reply from the same host.
+    # The IPv6 side has always accepted `packet-too-big` ahead of its limit for this reason; this
+    # is that decision, brought across.
+    #
+    icmp type destination-unreachable icmp code frag-needed accept
+
     icmp type echo-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type redirect update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type echo-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip saddr limit rate 10/second } accept
   }
@@ -327,6 +363,8 @@ table ip a-firewall-outbound-ipv4 {
 {% if inbound.dirport %}    tcp sport 9030 ct state established accept{% endif %}
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
 {% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
+{% if inbound.postgres %}    tcp sport 5432 ct state established accept{% endif %}
+{% if inbound.udp51821 %}    udp sport 51821 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
 {% if outbound.dns %}    udp dport 53 jump ACCEPT_DNS{% endif %}
@@ -422,20 +460,33 @@ table ip a-firewall-outbound-ipv4 {
   #
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+  ##
+  #
+  # LIMIT POSTURE: enforce — keyed on `ip daddr`, which is ours to choose, and enforcing by
+  # FALLING THROUGH rather than by saying `drop`.
+  #
+  # Over 10/second the rule stops matching, nothing beneath it accepts, and the chain policy
+  # drops. This is the first branch of ch1-3: the address the limit is keyed on is the one
+  # this host picked, so there is no forged source to aim it with. Enforced freely.
+  #
   chain VALID_ICMP {
+    ##
+    # PATH-MTU DISCOVERY IS NOT A DIAGNOSTIC, so it is not in the bucket the diagnostics share.
+    #
+    # `fragmentation-needed` is a code of `destination-unreachable`, and the rule below limits
+    # that type as a whole - so without this line this host's own report that a packet was too
+    # big competes for a budget with every diagnostic it sends to the same peer.
+    # The IPv6 side has always accepted `packet-too-big` ahead of its limit for this reason; this
+    # is that decision, brought across.
+    #
+    icmp type destination-unreachable icmp code frag-needed accept
+
     icmp type echo-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type redirect update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type echo-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip daddr limit rate 10/second } accept
   }

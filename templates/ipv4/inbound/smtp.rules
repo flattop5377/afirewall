@@ -25,6 +25,15 @@
 
 
   chain ACCEPT_SMTP {
+    ##
+    # LIMIT POSTURE: instrument — the collateral is a named correspondent, and it is aimable.
+    #
+    # Enforcing would hand anyone able to forge a SYN the ability to defer mail from one
+    # chosen sender for the 900s this set holds them. SMTP's own retry makes a drop
+    # recoverable rather than fatal, which is the honest argument for enforcing here — but a
+    # large sender's legitimate burst is not bounded below 5/minute, so the rule would refuse
+    # real mail before it refused abuse. Counted and admitted.
+    #
     ct state new tcp dport 25 update @smtp_rate_limit { ip saddr limit rate 5/minute } continue
     ct state new tcp dport 25 add @smtp_connection_limit { ip saddr ct count over 20 } continue
     ct state new,established tcp dport 25 accept
