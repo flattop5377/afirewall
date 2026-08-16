@@ -1,33 +1,175 @@
 ---
 layout: home
-title: A Pure Netfilter Firewall Wrapper
+title: A Pure Netfilter Firewall
 ---
 
-*** Status: Beta — feature complete, in production on the maintainer's own hosts ***
+**A host firewall you configure from Ansible with one `lineinfile` task, that loads on boot without
+you wiring anything up, and that never touches iptables.**
 
-[Open Issues](https://github.com/flattop5377/afirewall/issues)
+*Status: Beta — feature complete, in production on the maintainer's own hosts.*
+[Open issues](https://github.com/flattop5377/afirewall/issues)
 
-## What is it?
+---
 
-afirewall is a wrapper for a Netfilter firewall featuring:
-  * Easy to read [TOML](https://toml.io/en/) configuration file
-  * Easy to configure and maintain with [Ansible](https://ansible.com)
-    * [ansible.builtin.lineinfile](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html) can do all the configuration
-  * Implements IPV4 and IPV6 rules
-    * Restrict and limit ICMP traffic but still allow IP discovery and troubleshooting tools to operate
-  * Automatically discover network interface(s)
-  * Policy based firewall
-    * DENY INBOUND and OUTBOUND traffic by default
-      * SSH, DNS, DHCP, HTTP, and HTTPS are added as exceptions by the default configuration
-    * Explicitly add exceptions
-  * Set reasonable connection limits per source IP and per Service
-  * Persist rules across reboots using netfilters-persistence
+## Configure it from Ansible
 
-## Installation
+This is the reason afirewall exists. Every other firewall the author tried could be *installed* by a
+configuration manager and then had to be *configured* by hand, or through a module that wrapped a
+tool that wrapped the kernel.
 
-The repository ships a **deb822 sources file with the signing key inside it**, so adding it is one
-download rather than a key dance. Nothing has to be copied into `/etc/apt/trusted.gpg.d`, and
-nothing is trusted repository-wide.
+afirewall's configuration is a flat list of `<direction>.<service>: enable` lines. There is no
+nesting, no ordering, no syntax to get wrong — which means a play can compose a host's firewall by
+appending one line at a time, and two plays that know nothing about each other cannot collide.
+
+```yaml
+- name: "this host answers on 443"
+  ansible.builtin.lineinfile:
+    path: /etc/afirewall/afirewall.conf
+    line: "inbound.https: enable"
+    regexp: "^inbound.https:.*$"
+  register: firewall
+
+- name: "apply it"
+  ansible.builtin.command: /usr/sbin/afirewall reload
+  when: firewall.changed
+```
+
+That is the whole integration. `register` plus `when: changed` means a converged host stays quiet
+and only a real change reloads the ruleset.
+
+### The pattern that makes it declarative
+
+Adding a flag is easy. Making a host's firewall follow from *what the host is* takes one more step,
+and it is worth taking: **restore the packaged defaults at the start of the run, then let each role
+add what it needs.**
+
+```yaml
+# early, before any role has spoken
+- name: "start from a known state"
+  ansible.builtin.copy:
+    src: afirewall.conf          # your baseline, in your repo
+    dest: /etc/afirewall/afirewall.conf
+
+# later, in the role that owns the service
+- name: "mail arrives here"
+  ansible.builtin.lineinfile:
+    path: /etc/afirewall/afirewall.conf
+    line: "{{ item }}: enable"
+    regexp: "^{{ item }}:.*$"
+  loop:
+    - inbound.smtp
+    - outbound.smtp
+```
+
+Because the run starts from a fixed baseline, the end state is a function of **which roles ran**.
+Drop a host out of a group and the next converge stops opening that group's port — with no central
+table mapping groups to rules, and nothing to remember to undo. Each fact stays in the role that
+owns it.
+
+### Reading back what the kernel is doing
+
+The configuration file says what you asked for. The kernel says what you got, and they are different
+questions:
+
+```yaml
+- name: "the firewall is actually loaded"
+  ansible.builtin.command: nft list tables
+  register: nft
+  changed_when: false
+
+- ansible.builtin.assert:
+    that:
+      - "'a-firewall-inbound-ipv4' in nft.stdout"
+      - "'a-firewall-inbound-ipv6' in nft.stdout"
+```
+
+A package that is installed is not a firewall that is running. Ask.
+
+---
+
+## Pure nft. No iptables. Not one line.
+
+nftables replaced iptables — it is in the kernel, it is what `iptables` itself is a compatibility
+shim over on any current distribution, and new work happens there. afirewall generates nft and
+nothing else.
+
+That is a hard rule here rather than a preference, and it costs things. `fwknop` was rejected
+because it `Depends: iptables`. fail2ban is usable but wants its `banaction` pinned to the nftables
+backend, or you end up with two front ends writing rules that cannot see each other. The rule is
+worth the cost: **one tool writing packet filter rules is the only arrangement in which reading the
+ruleset tells you what the host does.**
+
+**Both directions default to drop.** Inbound *and* outbound, with no blanket
+`ct state established,related accept` covering everything. A service's reply path is opened by that
+service's own flag. That is deliberately unforgiving — a flag you forgot is a dead service rather
+than a quiet one — and it is the whole reason the configuration is worth reviewing.
+
+**And it stays out of the way of rules you add yourself.** afirewall keeps to four tables of its
+own, and `afirewall stop` deletes exactly those — it never flushes the ruleset, so nothing it does
+removes rules you or another tool put there. Its input chain sits at priority 20, behind the
+standard filter hook, which is why a fail2ban ban still takes effect: netfilter requires a packet to
+survive *every* base chain at a hook, so neither tool can open a port the other closed.
+
+### What it does not cover
+
+A host, and only a host. afirewall hooks `input` and `output`. Traffic a machine *routes* — a
+published container port, a DNAT to somewhere else — passes the `forward` hook, where this package
+installs nothing and the kernel's own default is accept. If you need the forwarded path filtered,
+this is not yet the tool for it.
+
+---
+
+## It persists itself
+
+afirewall installs as a **`netfilter-persistent` plugin**. There is no unit to enable, no
+`nft -f` in a cron job, no `/etc/nftables.conf` to hand-edit. Install it, configure it, and it is
+there after a reboot.
+
+```
+/usr/share/netfilter-persistent/plugins.d/afirewall
+```
+
+Which means the ruleset is regenerated from your configuration at boot rather than replayed from a
+dump. Edit the config, reboot, and you get what the config says — not what the ruleset happened to
+be when somebody last ran `save`.
+
+**One warning, because it will bite somebody.** Debian ships `/etc/nftables.conf` beginning with
+`flush ruleset`, which deletes *every* table in the kernel — afirewall's included — and then
+installs chains that state no policy, meaning accept. If `nftables.service` starts after the
+persistence plugin has restored your firewall, the host ends up with no firewall at all while
+`systemctl status nftables` reads green. afirewall does not need that unit:
+
+```sh
+sudo systemctl disable --now nftables.service
+```
+
+---
+
+## What it refuses before you configure anything
+
+These chains run ahead of every service decision and read no flag at all, so a host gets them from
+installing the package:
+
+| chain | drops | |
+|---|---|---|
+| `SPOOFING` | source addresses that cannot legitimately arrive on the external device | both families |
+| `INVALID_FLAGS` | TCP flag combinations [RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html) does not permit — no flags at all, FIN with SYN, the scan fingerprints | both families |
+| `PORT_ZERO` | port zero, in either direction | both families |
+| `FRAGMENTS` | what should not be fragmented | IPv4 only |
+
+Every one carries a **named counter**, so `nft list counters` tells you whether a rule has ever
+fired. A drop rule that matches nothing looks exactly like one that is working, and this is the
+difference.
+
+ICMP is **limited, not closed** — 10/second per source. Blocking it wholesale breaks network
+discovery and troubleshooting for whoever inherits the host, and the budget is generous against real
+work: `ping` sends 1/second, and a traceroute's replies each arrive from a different router. Path
+MTU discovery is carved out above the limit in both families, because a black-holed connection is
+not a diagnostic.
+
+---
+
+## Install
 
 ```sh
 sudo curl -fsSL -o /etc/apt/sources.list.d/flattop5377.sources \
@@ -36,38 +178,82 @@ sudo apt update
 sudo apt install afirewall
 ```
 
+The sources file is deb822 with the signing key **inline**, so there is no key dance and nothing is
+trusted repository-wide. The suite is codename-neutral: the package is `Architecture: all` and pure
+Python, so one build serves every Debian.
+
 Check what you got before trusting it:
 
 ```sh
 apt policy afirewall
-apt-cache show afirewall | grep -E '^(Package|Version|Filename)'
+apt-cache show afirewall | grep -E '^(Package|Version|Depends)'
 ```
 
-### Which suite
+It requires **nftables 1.0.2 or newer**. That floor is measured rather than assumed — a full
+generated ruleset is parsed by `nft -c` on each version, and 0.9.8 and earlier reject it.
 
-The repository currently publishes **`bookworm` only**. On a newer Debian the sources file still
-works — `afirewall` is `Architecture: all` and pure Python, so the codename in the path is a label
-rather than a compatibility claim — but if you would rather be explicit, edit `Suites:` in the file
-you just downloaded.
+## Configure
 
-### If you prefer to write the file yourself
+Edit `/etc/afirewall/afirewall.conf` and run `afirewall reload`. Inbound and outbound are separate,
+so enable the direction you actually need:
 
-Use the deb822 format above rather than a one-line `deb` entry. A one-liner needs the suite and the
-component and a `signed-by=` pointing at a key you have already installed, and getting any of the
-three wrong produces an error about signatures rather than about the line you typed. The shipped
-file carries the key inline and cannot be got wrong.
+```
+inbound.ssh: enable
+outbound.ssh: enable
+inbound.https: enable
+outbound.dns: enable
+```
 
-## Configuration
+A service with no template yet is an issue worth opening — the set that ships is the set somebody
+needed, not a claim about what exists.
 
-To enable or disable a service, edit the lines in /etc/afirewall/afirewall.conf. Inbound services are completely separate from outbound, so make sure to enable the appropriate direction of traffic. If the services is not listed there, then submit an issue or bravely explore the /etc/afirewall/templates directory and try to figure out the complex syntax of nft...
+---
 
-## Thank You
+## Where this came from
 
-A special thank you to:
-  * Firewall Influences:
-    * [Advanced Policy Firewall](https://www.rfxn.com/projects/advanced-policy-firewall/)
-    * [SoByte](https://www.sobyte.net/post/2022-04/understanding-netfilter-and-iptables/)
-  * Debian Packaging:
-    * [sigxcpu.org](https://honk.sigxcpu.org/piki/development/debian_packages_in_git/)
-    * [eyrie.org](https://www.eyrie.org/~eagle/notes/debian/git.html)
-    * [debian.org](https://www.debian.org/doc/manuals/debmake-doc/index.en.html)
+This is a small project standing on other people's work, and the reasoning in the rules is
+traceable to published sources rather than to folklore. If you disagree with a rule, these are what
+to argue with.
+
+**Firewalls this learned from**
+
+* [Advanced Policy Firewall](https://www.rfxn.com/projects/advanced-policy-firewall/) — the shape of
+  a policy-based firewall with a plain configuration file
+* [SoByte, *Understanding netfilter and iptables*](https://www.sobyte.net/post/2022-04/understanding-netfilter-and-iptables/)
+
+**netfilter and nftables**
+
+* [nftables wiki — Netfilter hooks](https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks)
+* [nftables wiki — Meters](https://wiki.nftables.org/wiki-nftables/index.php/Meters)
+* [nftables wiki — Matching connection tracking metainformation](https://wiki.nftables.org/wiki-nftables/index.php/Matching_connection_tracking_stateful_metainformation)
+* [nftables wiki — Quick reference, `ct`](https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes#Ct)
+* [netfilter Packet Filtering HOWTO](https://netfilter.org/documentation/HOWTO/packet-filtering-HOWTO-7.html)
+* [nftables source — `expression.h`](https://git.netfilter.org/nftables/log/include/expression.h?id=4e0026dc8d8693aaf2caf8df6d657a116734e84e&showmsg=1)
+
+**Standards the rules are derived from**
+
+* [RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html) — TCP. The permitted flag combinations,
+  which is what `INVALID_FLAGS` drops the complement of
+* [RFC 4890](https://www.rfc-editor.org/rfc/rfc4890.html) — filtering ICMPv6, and why neighbour
+  discovery must not be rate-limited away
+* [RFC 6633](https://www.rfc-editor.org/rfc/rfc6633.html) — deprecating ICMP Source Quench, which is
+  why no rule accepts it
+
+**IANA registries**
+
+* [ICMP parameters](https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml) and
+  [ICMPv6 parameters](https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml) —
+  the types accepted, chosen from the registry rather than from a list found elsewhere
+* [TCP parameters](https://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml#tcp-parameters-1) —
+  including the options this deliberately does *not* drop
+* [IPv4 special-purpose registry](https://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry.xhtml)
+  and [IPv6 special-purpose registry](https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml) —
+  the anti-spoofing lists, taken from the "Globally Reachable" column, with the entries deliberately
+  left out named in the list files
+
+**Debian packaging**
+
+* [Debian packages in git](https://honk.sigxcpu.org/piki/development/debian_packages_in_git/)
+* [Russ Allbery — Debian packaging with git](https://www.eyrie.org/~eagle/notes/debian/git.html)
+* [debmake documentation](https://www.debian.org/doc/manuals/debmake-doc/index.en.html)
+* [DEP-14](https://dep-team.pages.debian.net/deps/dep14/) — the branch layout this repository uses

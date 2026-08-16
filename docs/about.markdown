@@ -15,12 +15,12 @@ inbound.
 
 ## Basic protection against brute force and DoS attacks
 It seems like any server stood up as a VPS is immediately assaulted with bots
-that attempt to brute force SSH logins, so I wanted to counters in the
+that attempt to brute force SSH logins, so I wanted counters in the
 firewall that limited SSH bots, but still allowed sane traffic, such as Ansible
 to configure the VPS.
 
 I also wanted limits on HTTP/HTTPS traffic since those ports are also under
-constant assualt.
+constant assault.
 
 ## Dump invalid traffic, but allow ICMP troubleshooting
 I wanted a firewall that had strong rules for invalid traffic, including
@@ -31,8 +31,8 @@ troubleshooting.
 ## Use netfilter not iptables
 The firewall needed to integrate easily with netfilter, and netfilter
 persistence so that a minimum of additional configuration was needed to
-maintain the firewall rules.  Since I may manually add rules, I also wanted the
-filewall to operate at a priority where it wouldn't conflict with other
+maintain the firewall rules.  Since I may add rules by hand, I also wanted the
+firewall to operate at a priority where it wouldn't conflict with other
 rules.
 
 The reason for not wanting  iptables, is iptables is being replaced with

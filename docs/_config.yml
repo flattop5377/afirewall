@@ -3,8 +3,8 @@ remote_theme: "jekyll/minima@c6e74bb"
 author: Flattop5377
 email: Flattop5377@proton.me
 description: >
-  A wrapper for a pure netfilter without iptables firewall that is easy to
-  install and maintain with Ansible.
+  A host firewall you configure from Ansible with one lineinfile task, that
+  loads on boot by itself, and that never touches iptables.
 github_username: Flattop5377
 rss: rss
 
