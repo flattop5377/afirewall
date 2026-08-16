@@ -205,10 +205,26 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
 
   **What stays undecided is the name, not the behaviour.** One flag opening both halves is right,
   and a test pins it: splitting DHCP into `inbound.dhcp` and `outbound.dhcp` would make enabling one
-  and not the other a way to lose an address with nothing to say so. But `ch1-2` fixes the format as
-  `<direction>.<service>`, so a directionless `dhcp` is not available without deciding what that
-  file is — and `outbound.dhcp` opening an inbound accept is a small untruth a reader has to be
-  told rather than left to discover. Anchored to `ch1-2`.
+  and not the other a way to lose an address with nothing to say so.
+
+  **A third `bidirectional` direction is the obvious answer and is the wrong one.** The config
+  *parser* would take it — `branch()` splits on `.` and builds a tree from any key, so
+  `bidirectional.dhcp` parses today. Everything else is hardwired to two: the template variables
+  passed to Jinja, `add-service`'s `--inbound`/`--outbound`, the loop that reads which users a
+  service matches, the loop that disables services whose user is absent, the
+  `templates/<family>/<direction>/` layout, and the skew tests either side of it.
+
+  The cost is not the reason to refuse, though. **`bidirectional` is a different kind of thing from
+  `inbound` and `outbound`.** Those name a *hook*; that names a *cardinality*. Putting them in one
+  namespace is a category error, and it would have exactly one member — a name for a special case
+  rather than a category. Every service already produces rules in both chains; DHCP is not unusual
+  in being bidirectional, it is unusual in that its inbound rule cannot be a conntrack match.
+
+  **And there is a real third direction coming.** Namespaces (`ch4`) need `forward` — traffic that
+  is neither into nor out of this host — which *is* a hook and does belong beside the other two.
+  Adding `bidirectional` first would mean generalising the enumeration twice, and leaving a
+  category that does not sit alongside `forward` when it arrives. The enumeration should grow when
+  there is a hook to grow it for. Anchored to `ch1-2`.
 
 - **ch1-U7 — `source-quench` is still accepted and RFC 6633 deprecated it.** Routers no longer send
   it and hosts are told to ignore it, so the rule can only ever admit something forged. It went
