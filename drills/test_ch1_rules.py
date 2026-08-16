@@ -260,3 +260,89 @@ def test_incoherent_traffic_is_dropped_before_any_flag_is_consulted():
             f"{family}/base.rules has no counted drops left, so nothing can say whether the "
             "sanity rules have ever fired — a rule that matches nothing looks identical to one "
             "that is working")
+
+
+SOURCE = (ROOT / "afirewall" / "afirewall.py").read_text()
+
+
+@pytest.mark.proves("ch1-10", depth="structural")
+def test_the_generated_ruleset_outlives_a_reboot():
+    """Where the rules are written decides whether a host boots with a firewall.
+
+    They were in /run, which tmpfs empties at every boot, so `start` had nothing to restore and
+    rebuilt — at the one moment a rebuild cannot work, because netfilter-persistent runs this
+    plugin before the network is configured and the interface is discovered by routing lookup.
+    Measured on a host, 2026-08-16: no interface found, nothing generated, tables deleted anyway,
+    exit 0.
+    """
+    found = re.search(r"^GENERATED\s*=\s*'([^']+)'", SOURCE, re.M)
+    assert found, "GENERATED is no longer a plain assignment, so nothing here can say where it points"
+    where = found.group(1)
+    assert not where.startswith(("/run", "/tmp", "/var/run")), (
+        f"generated rules are written to {where}, which does not survive a reboot. `start` will "
+        "find nothing to restore and rebuild instead, and at boot there is no route to discover an "
+        "interface by — so the host comes up with no firewall at all.")
+
+
+@pytest.mark.proves("ch1-10", depth="structural")
+def test_the_boot_verb_restores_and_never_rebuilds():
+    """The verb netfilter-persistent sends at boot must not be one that needs the network.
+
+    netfilter-persistent runs its plugins with `run-parts -a <verb>` and sends only `start`, `save`
+    and `flush` — its own `reload` and `restart` both call the plugin with `start`. So `start` is
+    what arrives at boot AND what `systemctl restart netfilter-persistent` produces, and there is no
+    verb it can send that means rebuild. It is aliased to `restore` here because a start that does
+    not start reads as a mistake otherwise.
+
+    It must not generate even as a fallback. A verb that usually restores and occasionally rebuilds
+    behaves according to state the caller cannot see, which is the shape of the fault this subject
+    exists because of.
+    """
+    cases = re.findall(r"^\s*case ([^:]+):\n((?:(?!^\s*case ).*\n)*)", SOURCE, re.M)
+    bodies = {label.strip(): body for label, body in cases}
+    restore = next((b for lbl, b in bodies.items() if "'start'" in lbl), None)
+    assert restore is not None, "no case handles 'start', which is the verb netfilter-persistent sends"
+    assert "'restore'" in next(lbl for lbl in bodies if "'start'" in lbl), (
+        "'start' is not aliased to 'restore'. The ABI name has to stay, but a start that does not "
+        "start needs the honest name beside it or the next reader corrects the wrong thing.")
+    assert "generate()" not in restore, (
+        "the boot verb generates. At boot there is no network, so generation finds no interface "
+        "and the host is left bare — restoring the saved ruleset is the only thing that can work.")
+    rebuild = next((b for lbl, b in bodies.items() if "'regenerate'" in lbl), None)
+    assert rebuild is not None and "generate()" in rebuild, (
+        "nothing regenerates, so a configuration change would never reach the kernel and a saved "
+        "ruleset naming an old address would never be corrected")
+
+
+@pytest.mark.proves("ch1-10", depth="structural")
+def test_a_run_that_cannot_build_a_ruleset_changes_nothing():
+    """The worst outcome available, and it was the one on offer.
+
+    An empty interface list generated nothing, `stop()` deleted the four tables anyway, the glob
+    found nothing to load, and the program exited 0. A host that had a firewall a moment earlier had
+    none, and systemd recorded success. The only safe thing to do with a ruleset you cannot replace
+    is leave it alone.
+    """
+    generate = re.search(r"def generate\(\):\n((?:(?! {3}def ).*\n)*)", SOURCE)
+    assert generate, "generate() is gone, so nothing here can say what happens when it finds nothing"
+    body = generate.group(1)
+    guard = re.search(r"if not interfaces:\n\s*sys\.exit\(", body)
+    assert guard, (
+        "generate() no longer refuses when no interface is found in any family. Without that it "
+        "returns having produced nothing, the caller deletes the loaded tables, and the run exits "
+        "successfully with the host unprotected.")
+    assert body.index("if not interfaces:") < body.index("test(args.basedir"), (
+        "the refusal must come before anything is generated or torn down")
+
+
+@pytest.mark.proves("ch1-10", depth="integration")
+def test_a_rebooted_host_comes_up_with_its_firewall():
+    unwatched("ch1-10", "a host rebooted and its tables read back from the kernel afterwards — "
+                        "the three drills above inspect the source and cannot execute it, because "
+                        "every command but add-service requires root, so what they settle is the "
+                        "shape rather than the behaviour. DONE BY HAND on a host, 2026-08-16: before "
+                        "the change the boot logged `no IPV4 interface found`, `Result=success` "
+                        "and held no tables; after it the boot logged `Loading rules from "
+                        "/var/lib/afirewall/ipv4.nft` and all four tables were present, with "
+                        "wireguard, the alerter, apt and syslog all working through them. "
+                        "Automating it needs the a host fixture this repository keeps deferring")

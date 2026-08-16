@@ -72,7 +72,7 @@ def test(template_directory, interface, config):
 SHIPPED = '/usr/share/afirewall'
 
 #: Where the rendered ruleset goes. See process_scripts for why it is not the base directory.
-GENERATED = '/run/afirewall'
+GENERATED = '/var/lib/afirewall'
 
 def first_existing(*paths):
    """The first of these that is there, or the last as the thing to complain about."""
@@ -115,10 +115,26 @@ def process_scripts(base_directory, interface, config):
 
    template_name = "{family}/base.rules".format(family=interface.family.name.lower());
    # GENERATED, SO IT IS NEITHER CONFIGURATION NOR DATA. This is derived from the config and
-   # rebuilt on every start. Under /etc it was unowned by dpkg and churned beneath anything
-   # watching configuration for change. /run rather than /var/lib because it empties on boot,
-   # which makes loading a ruleset that no longer matches the configuration impossible rather
-   # than merely unlikely.
+   # rebuilt whenever the configuration is applied. Under /etc it was unowned by dpkg and churned
+   # beneath anything watching configuration for change.
+   #
+   # IT WAS /run UNTIL 2026-08-16, WHICH MEANT THE HOST BOOTED WITH NO FIREWALL. The note that
+   # chose it argued that emptying on boot makes loading a ruleset stale against the configuration
+   # impossible - reasoning about the ruleset without reasoning about the boot, because the boot is
+   # exactly when the rebuild it forces cannot work. netfilter-persistent runs this plugin before
+   # the network is configured, so `ip route get` finds no route, no interface is discovered, and
+   # nothing is generated. Measured on a host, 2026-08-16: `Warning: no IPV4 interface found`,
+   # `Result=success`, and not one table in the kernel.
+   #
+   # PERSISTENCE IS THE POINT OF THE THING THIS IS A PLUGIN FOR. netfilter-persistent restores a
+   # saved ruleset at boot; that is its whole job, and every other plugin it runs works that way.
+   # Generating is what happens when the configuration CHANGES, not every time the machine starts.
+   # So the rules persist and `start` restores them, while `reload` regenerates.
+   #
+   # Staleness is still real - these rules name the interface's address, so a host that boots on a
+   # new one restores rules describing the old. It is handled by regenerating after the network is
+   # up rather than by throwing the ruleset away, because a stale firewall is a smaller problem
+   # than no firewall, and only one of the two announces itself.
    os.makedirs(GENERATED, exist_ok=True)
    output_name = GENERATED + "/" + interface.family.name.lower() + ".nft"
 
@@ -275,7 +291,22 @@ def get_external_ipv6_interface(destination):
 
 def get_parser():
    parser = argparse.ArgumentParser(description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux')
-   parser.add_argument('command', choices=['start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service'], help='Manage netfilter rules for a firewall, or add a service it has no template for')
+   # TWO REAL ACTIONS, AND SEVEN NAMES FOR THEM, BECAUSE ONLY TWO OF THE NAMES ARE OURS.
+   #
+   # What this program does is `restore` a saved ruleset or `regenerate` one from the
+   # configuration. Those are the words that say what happens, and they are the ones to reach for.
+   #
+   # `start`, `save` and `flush` are netfilter-persistent's, not ours: it runs the plugins in
+   # /usr/share/netfilter-persistent/plugins.d with `run-parts -a <verb>`, and its own `reload` and
+   # `restart` both call the plugin with `start` — so `start` is what arrives at boot AND what
+   # `systemctl restart netfilter-persistent` produces, and there is no verb it can send that means
+   # "rebuild". `start` therefore means restore, which reads oddly and is the contract rather than a
+   # choice. Renaming it would simply stop the plugin working.
+   #
+   # `restart`, `reload` and `force-reload` are never sent by netfilter-persistent at all. They
+   # exist here for a person or a configuration manager, so they are aliases of `regenerate`, which
+   # is what somebody typing them after editing afirewall.conf means.
+   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two')
    parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
@@ -453,24 +484,71 @@ if __name__ == "__main__":
 
    if os.geteuid() != 0: sys.exit('Root permissions required.')
 
-   config = disable_services_missing_their_users(args.basedir, get_configuration())
-   interfaces = get_interfaces(args.basedir)
+   def generate():
+      """Build the rulesets from the configuration, and refuse rather than disarm.
+
+      AN EMPTY INTERFACE LIST USED TO BE AN OUTCOME, AND IT WAS THE WORST ONE AVAILABLE. The loop
+      below generated nothing, `stop()` then deleted whatever the kernel was holding, the glob
+      found no files to load, and the program exited 0. A host that had a firewall a moment ago had
+      none, and every instrument said the run succeeded.
+
+      A family with no interface is still fine and still only a warning - a host without IPv6 is
+      not a host with a broken IPv6 firewall. No interface in ANY family is a different statement:
+      it means nothing could be built, and the only safe thing to do with a ruleset you cannot
+      replace is leave it alone."""
+      config = disable_services_missing_their_users(args.basedir, get_configuration())
+      interfaces = get_interfaces(args.basedir)
+      if not interfaces:
+         sys.exit('No external interface was found in any family, so no ruleset can be built. '
+                  'Nothing has been changed - whatever this host is running is still running. '
+                  'If this is a boot, the network was not up yet and `start` should be restoring '
+                  'the saved ruleset rather than rebuilding it; if it is not, name the interface '
+                  'in ' + args.basedir + '/' + INTERFACES_FILE + '.')
+      # Validate BEFORE tearing anything down. This ran the other way round, and `test`
+      # exits on a bad ruleset - so the tables were already deleted by the time anything
+      # checked, and a config that did not compile left the host with no firewall at all.
+      # nft -c is happy to check a ruleset whose tables are currently loaded, so there is
+      # nothing to be gained by flushing first.
+      for interface in interfaces:
+         test(args.basedir, interface, config)
+
+   def load():
+      saved = sorted(glob.glob(GENERATED + '/ipv[46].nft'))
+      if not saved:
+         sys.exit('There is no saved ruleset in ' + GENERATED + ', so there is nothing to restore '
+                  'and this host has no firewall. Nothing has been changed. Run `afirewall '
+                  'regenerate` to build one from ' + args.basedir + '/afirewall.conf - it needs '
+                  'the network to be up, because the external interface is found by routing '
+                  'lookup unless it is named in ' + args.basedir + '/' + INTERFACES_FILE + '.')
+      stop()
+      for file in saved:
+         print('Loading rules from ' + file)
+         start(file)
 
    match args.command:
-      case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':
-         # Validate BEFORE tearing anything down. This ran the other way round, and `test`
-         # exits on a bad ruleset - so the tables were already deleted by the time anything
-         # checked, and a config that did not compile left the host with no firewall at all.
-         # nft -c is happy to check a ruleset whose tables are currently loaded, so there is
-         # nothing to be gained by flushing first.
-         for interface in interfaces:
-            nft_input = test(args.basedir, interface, config)
-         stop()
-         for file in glob.glob(GENERATED + '/ipv[46].nft'):
-             print('Loading rules from ' + file)
-             start(file)
+      # RESTORE, AND ONLY RESTORE. `start` is netfilter-persistent's name for this and arrives at
+      # boot, when there is no network to discover an interface on - so restoring a saved ruleset
+      # is the only thing that can work here, and rebuilding is what left hosts bare.
+      #
+      # IT DOES NOT QUIETLY GENERATE WHEN THERE IS NOTHING SAVED, and that restraint is the point.
+      # A verb that usually restores and occasionally rebuilds is one whose behaviour depends on
+      # state the caller cannot see, which is the shape of the bug this whole change exists to fix.
+      # Nothing saved is a real fault - the package was installed and never configured - so it says
+      # so and exits non-zero rather than doing the other thing. Packaging is where that gap is
+      # closed: postinst regenerates once, and every boot after it restores.
+      case 'restore' | 'start':
+         load()
+      # REGENERATE. The configuration has changed, or might have. This is also what corrects a
+      # saved ruleset naming an address the host no longer has, which is the cost of persisting.
+      case 'regenerate' | 'restart' | 'reload' | 'force-reload':
+         generate()
+         load()
+      # SAVE WRITES THE RULESET DOWN AND DOES NOT LOAD IT, which is what the verb means to
+      # netfilter-persistent. It used to be a synonym for restart, so asking to record the current
+      # state also tore the firewall down and put it back.
+      case 'save':
+         generate()
       case 'stop' | 'flush':
          stop()
       case 'test':
-         for interface in interfaces:
-            test(args.basedir, interface, config)
+         generate()
