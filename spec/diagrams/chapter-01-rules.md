@@ -172,8 +172,8 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   every host carries `rp_filter=2`, which is *loose* reverse-path filtering — it drops only sources
   unreachable by any route, not a private source arriving where it could not have come from. And
   **there is no IPv6 rp_filter at all**; the file does not exist. So for IPv6 a firewall is the only
-  place anti-spoofing can live, which makes `SPOOFING` matter most in exactly the family whose
-  ruleset has never loaded (`ch1-U10`).
+  place anti-spoofing can live, which makes `SPOOFING` matter most in exactly the
+  family whose ruleset had never loaded until 2026-08-16.
 
   **What follows.** A better heuristic is not available — deriving "external" from "which address is
   globally routable" fails on a NAT'd VPS, whose only interface is external and privately addressed.
@@ -186,6 +186,29 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   Where the statement lives is the remaining part. `ch1-2` keeps `afirewall.conf` a flat list of
   service flags, and firewalld's precedent is to keep zone assignment out of the service definitions
   entirely. Anchored to `ch1-1`.
+
+- **ch1-U10 — one service's flag opens a rule that is not a reply, and its name does not say so.**
+  Every `outbound.<service>` line opens two things: the outbound accept, and an inbound line for the
+  traffic coming back. For every service but one that inbound line is a conntrack reply path and the
+  name reads correctly. **DHCP is the exception.** A client that broadcasts or multicasts its
+  request is answered from the server's own unicast address, so the tuples do not match, the reply
+  arrives INVALID or NEW, and `ct state established` never fires. Its inbound line has to be a real
+  accept matched on the port pair, which is what it now is.
+
+  **Measured, and the two families disagreed — which is the part worth keeping.** With the old
+  `ct state established` reply rule in place: IPv6 counted a ten-minute lease down to 25 seconds
+  without renewing, and lost the address outright on a forced reconfigure. IPv4 renewed *and* fully
+  re-acquired through the same firewall, because `systemd-networkd` unicasts to a server it already
+  knows. **So IPv4 was never broken** — and it is not broken because the *client* chose unicast,
+  not because the rule covered it. A firewall that depends on which destination a client picks works
+  until the client changes.
+
+  **What stays undecided is the name, not the behaviour.** One flag opening both halves is right,
+  and a test pins it: splitting DHCP into `inbound.dhcp` and `outbound.dhcp` would make enabling one
+  and not the other a way to lose an address with nothing to say so. But `ch1-2` fixes the format as
+  `<direction>.<service>`, so a directionless `dhcp` is not available without deciding what that
+  file is — and `outbound.dhcp` opening an inbound accept is a small untruth a reader has to be
+  told rather than left to discover. Anchored to `ch1-2`.
 
 - **ch1-U7 — `source-quench` is still accepted and RFC 6633 deprecated it.** Routers no longer send
   it and hosts are told to ignore it, so the rule can only ever admit something forged. It went
