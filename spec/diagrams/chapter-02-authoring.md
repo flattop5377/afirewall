@@ -63,7 +63,7 @@ flowchart TD
 | `ch2-1` | a host runs a service this package ships no template for | **Coverage is a real defect and not a backlog item.** Seventeen inbound templates and a handful of outbound ones is a small fraction of what a Debian host runs, and the operator itself has already hit it twice — a forwarding host on udp 7777 and postgres both have plays with no flag to enable. Every user hits this eventually, and the failure is that they stop using the package rather than that they complain |
 | `ch2-2` | the service is named | **The name is what an argument can attach to, which is why bare port/protocol was rejected.** `ch1-5` decides a posture by asking who is refused when the limit bites — a party the operator chose, a crowd sharing an address, or an anonymous peer that replaces itself. `tcp/9999` cannot answer that question and `postgres` can. A configuration format that could only say the port would make `ch1-6` unwritable, and losing the argument is a worse outcome than losing the coverage it was meant to buy |
 | `ch2-3` | one name carries any mixture of protocol and port | **A service is a set of protocol/port pairs, not one port**, because real services are not one port: a forwarding host wants udp and tcp on the same number, bacula uses three consecutive ports across three roles, and a range is one service rather than a hundred. The flag stays one key — `ch1-2` requires ansible to compose the config by appending single lines — so the multiplicity lives in the template rather than in the config |
-| `ch2-4` | what is this limit's posture, and why? | **The tool asks, and it is the asking that makes this chapter worth building.** A generator that only saved typing would be a convenience; one that refuses to render a limit without an argument makes `ch1-6` structural rather than aspirational. The question is asked at the moment the person has the answer — they know what the service is and who talks to it — instead of by a reviewer months later who does not |
+| `ch2-4` | what is this limit's posture, and why? | **It is a subcommand of `afirewall`, because the person who needs it has not heard of it.** A separate authoring tool is something you must already know exists; a subcommand appears in the help of the command they have already run. That carries a fix with it: `afirewall` exits on `geteuid() != 0` *before parsing arguments*, so `--help` needs root today — which is right for loading a ruleset and wrong for writing a file into a source tree, and would make the discoverable option undiscoverable. **The tool asks, and it is the asking that makes this chapter worth building.** A generator that only saved typing would be a convenience; one that refuses to render a limit without an argument makes `ch1-6` structural rather than aspirational. The question is asked at the moment the person has the answer — they know what the service is and who talks to it — instead of by a reviewer months later who does not |
 | `ch2-5` | no answer, no template | **Refusing is the feature.** A default posture would be the whole failure of this package's history repeating: the twelve instrumenting templates were read as broken by one reader and others were rewritten to enforce by another, precisely because a posture with no argument is indistinguishable from an accident. A tool that silently picked one would manufacture that ambiguity at scale |
 | `ch2-6` | rendered in the canonical shape, both families | **Both families, always, or the generated service is an IPv4 service wearing a neutral name.** The IPv6 ruleset in this package went years without ever loading because ipv4-only assumptions were copied into it, and a tool that made v4 easy and v6 optional would rebuild that fault deliberately. The shape is the package's existing one — set declarations, then the chain, at the established indentation — because a generated template that looks generated splits the package into two dialects |
 | `ch2-7` | indistinguishable from a hand-written template | **The measure of the tool is that its output needs no maintenance path of its own.** A generated template is edited by hand afterwards like any other, appears in the same three-way skew checks the package already runs, and carries its `# LIMIT POSTURE:` note in the same place. There is no registry of generated services and no marker distinguishing them, because a second class of template is a second thing to keep true |
@@ -85,11 +85,17 @@ shipped with the package (`ch2-7`).
 
 ## Open unknowns
 
-- **ch2-U1 — the interface is not decided.** A subcommand of `afirewall` and a separate tool are
-  both defensible: the subcommand is discoverable and shares the config parsing, while a separate
-  tool keeps an authoring concern out of a binary whose other job is to be run by
-  netfilter-persistent at boot with root. Nothing here decides it, and the claims above hold either
-  way. Anchored to `ch2-4`.
+- **ch2-U1 — RESOLVED: a subcommand of `afirewall`.** Discoverability decided it. A separate tool
+  is something you have to have heard of; a subcommand is in the help output of the command the
+  person already ran, which matters most for exactly the user this chapter is about — somebody whose
+  service has no flag and who does not yet know the package can be extended.
+
+  **It brings one thing that has to be fixed rather than worked around.** `afirewall` exits on
+  `os.geteuid() != 0` before it parses arguments at all, so today even `--help` requires root. That
+  is defensible for a command whose other job is loading a ruleset, and wrong for an authoring path:
+  writing a template into a source tree is not a privileged operation, and requiring root to read
+  the help is how a discoverable subcommand becomes an undiscoverable one. The root check belongs on
+  the commands that touch the kernel, not on the parser.
 
 - **ch2-U2 — nothing decides what happens to a service that needs more than ports.** The existing
   outbound templates key on `meta skuid`, the WireGuard ones carry an argument about dynamic peer

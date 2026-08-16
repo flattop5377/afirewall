@@ -154,9 +154,6 @@ table ip a-firewall-inbound-ipv4 {
     icmp type echo-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip saddr limit rate 10/second } accept
   }
@@ -482,9 +479,6 @@ table ip a-firewall-outbound-ipv4 {
     icmp type echo-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type timestamp-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type info-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type address-mask-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip daddr limit rate 10/second } accept
   }

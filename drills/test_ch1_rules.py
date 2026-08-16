@@ -12,8 +12,11 @@ tests and are not rdeploymentd here; this chapter is about the reasoning behind 
 consistency of the set.
 """
 
+import os
 import pathlib
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -198,9 +201,29 @@ def test_nothing_reaches_for_iptables():
 
 @pytest.mark.proves("ch1-7", depth="integration")
 def test_the_ruleset_loads_whole_or_not_at_all():
-    unwatched("ch1-7", "`nft -c` against a generated ruleset as root — the package's own tests "
-                       "already skipUnless(root) for exactly this, because nft parses first and "
-                       "only then reads the kernel ruleset")
+    """`nft -c` against a fully rendered ruleset, which is the only check here that is not a guess
+    about what nft wants.
+
+    THIS WAS UNWATCHED AND SHOULD NOT HAVE BEEN. The reason recorded for not taking the reading was
+    that nft is not installed — and nft was installed the whole time, at `/sbin/nft`, which is not
+    on a non-root PATH. `shutil.which` returning nothing was read as absence, which is the same
+    mistake as a search proving absence. Taking the reading immediately found `ip saddr` in an ip6
+    template, and nft refuses a table containing one unloadable rule, so every host with
+    `inbound.tcp8000` enabled would have had no IPv6 firewall at all.
+
+    The observation delegates to the package's own suite rather than restating it: `-c` checks and
+    never commits, and root is needed because nft parses first and only then reads the kernel's
+    ruleset, so an unprivileged run stops at the syntax and proves nothing.
+    """
+    if os.geteuid() != 0:
+        unwatched("ch1-7", "`nft -c` against a rendered ruleset, which needs root — nft parses "
+                           "first and only then reads the kernel ruleset, so an unprivileged run "
+                           "stops at the syntax. Run the board under sudo to take this reading")
+    checked = subprocess.run(
+        [sys.executable, "-m", "unittest",
+         "test.test_afirewall.TestAfirewall.testNftAcceptsTheRenderedRuleset"],
+        cwd=ROOT, capture_output=True, encoding="UTF-8")
+    assert checked.returncode == 0, f"nft refuses the rendered ruleset:\n{checked.stderr}"
 
 
 @pytest.mark.proves("ch1-8", depth="unit")

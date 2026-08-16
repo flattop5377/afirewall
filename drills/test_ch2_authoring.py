@@ -21,10 +21,10 @@ from undrilled import unwatched
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-#: The generator's home is not decided (``ch2-U1``) — a subcommand of ``afirewall`` and a separate
-#: authoring tool are both defensible. So this looks for the capability rather than for a filename,
-#: and any of these being true satisfies it.
-CANDIDATES = ("afirewall/authoring.py", "afirewall/add_service.py", "afirewall/afirewall.py")
+#: The generator is a subcommand of ``afirewall`` (``ch2-U1``, resolved on discoverability), so it
+#: lives with the command rather than beside it. The second path stays in the list because a module
+#: the subcommand delegates to is the same decision, differently arranged.
+CANDIDATES = ("afirewall/afirewall.py", "afirewall/authoring.py")
 
 
 def authoring():
@@ -86,6 +86,16 @@ def test_the_posture_and_its_reason_are_required_arguments():
     assert re.search(r"required\s*=\s*True|because|reason", text, re.I), (
         "a posture can be given without a reason, so the tool would record a verdict nobody "
         "argued — which is the state ch1-U1 had to sweep 36 files to fix")
+    # And the subcommand has to be reachable without root. Writing a template into a source tree
+    # is not a privileged operation, and `afirewall` currently exits on geteuid() before it parses
+    # anything at all — so `--help` needs root, and the discoverable option is undiscoverable.
+    main = (ROOT / "afirewall" / "afirewall.py").read_text()
+    root_check = main.find("geteuid")
+    parse = main.find("parse_arguments()", main.find('if __name__'))
+    assert root_check == -1 or (parse != -1 and parse < root_check), (
+        "afirewall refuses to parse arguments before checking for root, so the authoring "
+        "subcommand — and its --help — cannot be reached by the person who needs it. The check "
+        "belongs on the commands that touch the kernel.")
 
 
 @pytest.mark.proves("ch2-5", depth="structural")
