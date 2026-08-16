@@ -425,3 +425,22 @@ class TestInterfaceDiscovery(unittest.TestCase):
 
     def testNoRouteIsNotAnInterface(self):
         self.assertIsNone(self.discover(afirewall.Family.IPV6, '2001:4860:4860::8888', {}))
+
+    def testDiscoveryTargetsAreDocumentationAddresses(self):
+        """The defaults handed to `ip route get`, pinned so nobody helpfully restores a real one.
+
+        No packet is sent - this is a routing table lookup - so the usual objection to a public
+        resolver's address does not apply. What does is that a host may carry a SPECIFIC route for
+        a real service: a split-tunnel VPN forcing DNS down the tunnel makes discovery return the
+        tunnel's device, and then the SPOOFING chain is qualified by the wrong interface and the
+        spoof list subtracted against the wrong network, with nothing to show for it.
+
+        RFC 5737 and RFC 3849 addresses name no service, so nothing routes them for a service's
+        sake and the lookup follows the default route - which is the question being asked.
+        """
+        from ipaddress import ip_address, ip_network
+        defaults = {a.dest: a.default for a in afirewall.get_parser()._actions}
+        self.assertIn(ip_address(defaults['ipv4dest']), ip_network('192.0.2.0/24'),
+                      'the IPv4 discovery target is not an RFC 5737 documentation address')
+        self.assertIn(ip_address(defaults['ipv6dest']), ip_network('2001:db8::/32'),
+                      'the IPv6 discovery target is not an RFC 3849 documentation address')

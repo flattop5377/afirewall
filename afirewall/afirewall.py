@@ -189,8 +189,23 @@ def get_parser():
    parser.add_argument('--because', help='add-service: WHY that posture. Recorded beside the rule, and required')
    parser.add_argument('-nft', help='full path to nft - default /usr/sbin/nft', default='/usr/sbin/nft')
    parser.add_argument('-ip', help='full path to ip - default /usr/bin/ip', default='/usr/bin/ip')
-   parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
-   parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
+   # WHY A DOCUMENTATION ADDRESS AND NOT A REAL ONE. This is only ever handed to `ip route get`,
+   # which is a routing table lookup and sends no packet - so the usual objection to a public
+   # resolver's address, that it leaks or that it depends on somebody else being up, does not
+   # apply. What does apply is subtler: a host may carry a SPECIFIC route for a real service.
+   # Split-tunnel VPNs commonly force DNS down the tunnel, and a policy route for 8.8.8.8 makes
+   # discovery return the tunnel's device and address. The SPOOFING chain is then qualified by the
+   # wrong interface and the spoof list subtracted against the wrong network, silently.
+   #
+   # 192.0.2.0/24 (RFC 5737, TEST-NET-1) and 2001:db8::/32 (RFC 3849) name no service, so nothing
+   # routes them specially for a service's sake and the lookup follows the default route - which is
+   # what discovery is actually asking about. A third party's address also has no business being a
+   # default in a package other people install.
+   #
+   # The residual risk is a host that installs reject routes for bogon ranges; that is what these
+   # two options are for.
+   parser.add_argument('-ipv4dest', help='address used to find the external ipv4 device and source address, by routing table lookup - no packet is sent - default 192.0.2.1', default='192.0.2.1')
+   parser.add_argument('-ipv6dest', help='address used to find the external ipv6 device and source address, by routing table lookup - no packet is sent - default 2001:db8::1', default='2001:db8::1')
    parser.add_argument('-b', '--basedir', help='path to the base configuration directory - default /etc/afirewall', default='/etc/afirewall')
    return parser
 
