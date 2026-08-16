@@ -362,3 +362,85 @@ class TestAfirewall(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class TestInterfaceDiscovery(unittest.TestCase):
+    """Which device and address the firewall thinks it is protecting.
+
+    THIS IS A REGRESSION TEST FOR A BUG THAT COST EVERY HOST ITS IPv6 FIREWALL. Discovery used to
+    regex `ip`'s human-readable output, and the IPv6 device pattern was `[0-9a-f:]+` - the pattern
+    for an IPv6 address, applied to a field holding a device NAME. It matches no normal interface,
+    so IPv6 discovery returned nothing, get_interfaces() warned and continued, and the generated
+    ruleset was IPv4-only. Nothing failed; the firewall was simply half there.
+
+    These use fixtures rather than the machine's own network, so the case that was broken - a host
+    with global IPv6 on a normally-named interface - is testable on a workstation that has none.
+    """
+
+    def discover(self, family, destination, fixtures):
+        import types
+        afirewall.args = types.SimpleNamespace(ip='/usr/bin/ip')
+        original, afirewall.ip_json = afirewall.ip_json, lambda *a: fixtures.get(tuple(a), [])
+        try:
+            return afirewall.get_external_interface(destination, family)
+        finally:
+            afirewall.ip_json = original
+
+    def testIpv6IsFoundOnANormallyNamedInterface(self):
+        for name in ('ens3', 'eth0', 'enp4s0', 'eno1'):
+            with self.subTest(device=name):
+                found = self.discover(afirewall.Family.IPV6, '2001:4860:4860::8888', {
+                    ('route', 'get', 'to', '2001:4860:4860::8888'):
+                        [{'dev': name, 'prefsrc': '2a01:4f8:1c1c:abcd::1'}],
+                    ('addr', 'show', name):
+                        [{'addr_info': [{'family': 'inet6', 'local': '2a01:4f8:1c1c:abcd::1',
+                                         'prefixlen': 64, 'scope': 'global'}]}]})
+                self.assertIsNotNone(found, name + ' was not discovered')
+                self.assertEqual(name, found.device)
+
+    def testTheLinkLocalAddressIsNotMistakenForTheExternalOne(self):
+        """fe80::/10 is on every IPv6 interface and is never what traffic leaves from. Taking the
+        first address in the list would pick it about half the time."""
+        found = self.discover(afirewall.Family.IPV6, '2001:4860:4860::8888', {
+            ('route', 'get', 'to', '2001:4860:4860::8888'):
+                [{'dev': 'ens3', 'prefsrc': '2a01:4f8:1c1c:abcd::1'}],
+            ('addr', 'show', 'ens3'):
+                [{'addr_info': [{'family': 'inet6', 'local': 'fe80::1', 'prefixlen': 64,
+                                 'scope': 'link'},
+                                {'family': 'inet6', 'local': '2a01:4f8:1c1c:abcd::1',
+                                 'prefixlen': 64, 'scope': 'global'}]}]})
+        self.assertEqual('2a01:4f8:1c1c:abcd::1', str(found.address))
+        self.assertEqual('2a01:4f8:1c1c:abcd::/64', str(found.network))
+
+    def testTheNetworkComesFromTheAddressTheRouteChose(self):
+        """An interface commonly carries more than one address in a family. The one that matters is
+        the one the route picked, not the one listed first."""
+        found = self.discover(afirewall.Family.IPV4, '8.8.8.8', {
+            ('route', 'get', 'to', '8.8.8.8'): [{'dev': 'eth0', 'prefsrc': '10.1.2.3'}],
+            ('addr', 'show', 'eth0'):
+                [{'addr_info': [{'family': 'inet', 'local': '192.0.2.7', 'prefixlen': 24,
+                                 'scope': 'global'},
+                                {'family': 'inet', 'local': '10.1.2.3', 'prefixlen': 16,
+                                 'scope': 'global'}]}]})
+        self.assertEqual('10.1.0.0/16', str(found.network))
+
+    def testNoRouteIsNotAnInterface(self):
+        self.assertIsNone(self.discover(afirewall.Family.IPV6, '2001:4860:4860::8888', {}))
+
+    def testDiscoveryTargetsAreDocumentationAddresses(self):
+        """The defaults handed to `ip route get`, pinned so nobody helpfully restores a real one.
+
+        No packet is sent - this is a routing table lookup - so the usual objection to a public
+        resolver's address does not apply. What does is that a host may carry a SPECIFIC route for
+        a real service: a split-tunnel VPN forcing DNS down the tunnel makes discovery return the
+        tunnel's device, and then the SPOOFING chain is qualified by the wrong interface and the
+        spoof list subtracted against the wrong network, with nothing to show for it.
+
+        RFC 5737 and RFC 3849 addresses name no service, so nothing routes them for a service's
+        sake and the lookup follows the default route - which is the question being asked.
+        """
+        from ipaddress import ip_address, ip_network
+        defaults = {a.dest: a.default for a in afirewall.get_parser()._actions}
+        self.assertIn(ip_address(defaults['ipv4dest']), ip_network('192.0.2.0/24'),
+                      'the IPv4 discovery target is not an RFC 5737 documentation address')
+        self.assertIn(ip_address(defaults['ipv6dest']), ip_network('2001:db8::/32'),
+                      'the IPv6 discovery target is not an RFC 3849 documentation address')
