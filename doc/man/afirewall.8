@@ -1,0 +1,61 @@
+.TH afirewall 8 "15 Aug 2026" "20260815.0.0" "afirewall manual"
+
+.SH NAME
+afirewall \- A pure NetFilter Firewall wrapper for Linux
+
+.SH SYNOPSIS
+.B
+afirewall 
+.RB {| OPTIONS |}
+.RB {| COMMAND |}
+
+.SH DESCRIPTION
+.PP
+afirewall uses netfilter to deny by default all inbound and outbound network traffic, except what is specifically allowed.  By default, the firewall allows inbound IPV4 SSH, and outbound IPV4 SSH, DHCP, DNS, NTP, and HTTP/HTTPS traffic.  It also sets reasonable limits for ICMP traffic.  IPV4 and IPV6 traffic is configured separately.
+
+.PP
+The firewall's configuration file defaults to /etc/afirewall/afirewall.conf where individual services can be enabled.  The configuration file uses a syntax that is easy to read for human and also update / parse with Ansible.
+
+.PP
+Templates, for adding services that don't have a configuration shipped with the package, are in basedir/templates.  Distribution templates are in /usr/share/afirewall/templates.  Please suggest services you'd like added to the package by making a new issue on github.
+
+.PP
+Lists, such as spoofed networks, are in /etc/afirewall/lists.  Distribution lists are in /usr/share/afirewall/lists.
+
+.SH OPTIONS
+.OP "start, restart, reload, force-reload, save"
+first stop the firewall, which flushes all the rules and drops all the firewall tables restoring the netfilter default (which is probably to allow all traffic), then start the firewall
+
+.OP "stop, flush"
+stop the firewall restoring the netfilter default (which is probably to allow all traffic)
+
+.OP "test"
+tests the syntax of all the files and availability of network interfaces but will not enable the firewall
+
+.OP "-nft"
+the full path to nft, default /usr/sbin/nft
+
+.OP "-ip"
+the full path to ip, default /usr/bin/ip
+
+.OP "-ipv4dest"
+destination used to find the external ipv4 address and device, default 8.8.8.8
+
+.OP "-ipv6dest"
+destination used to find the external ipv6 address and device, default 2001:4860:4860:0:0:0:0:8888
+
+.OP "-b, --basedir"
+path to the configuration file, templates, lists, and output of nft, default /etc/afirewall
+
+.SH SEE ALSO
+.BR nft (8),
+.BR nftables (8),
+.BR netfilter-persistent (8)
+.PP
+The configuration file is /etc/afirewall/afirewall.conf and documents itself in its own comments.
+
+.SH BUGS
+https://github.com/flattop5377/afirewall/issues
+
+.SH AUTHOR
+Flattop (flattop5377@proton.me)
