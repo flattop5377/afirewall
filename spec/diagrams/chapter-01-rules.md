@@ -112,19 +112,48 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   honest way to settle it is to generate the load. Anchored to `ch1-5`.
 
 - **ch1-U3 — the IPv4 side rate-limits the signal path-MTU discovery runs on, and the IPv6 side
-  does not.** `base.rules` for IPv6 accepts `packet-too-big` unconditionally, ahead of and outside
-  the 10/second bucket, which is right: PMTUD in IPv6 depends entirely on that message arriving.
-  The IPv4 equivalent is `fragmentation-needed`, a *subtype* of `destination-unreachable`, and the
-  IPv4 rules limit `destination-unreachable` as a whole — so the message a black-holed connection
-  needs shares an enforcing bucket with every other unreachable. Whether that matters in practice
-  depends on Linux's PMTUD black-hole detection covering it, which has not been measured, and the
-  fix if it does matter is one rule rather than a change of posture. Anchored to `ch1-5`.
+  does not.** **The posture is settled and is not the open part.** ICMP has many uses and this is a
+  package other people install, so the default must not cripple network discovery or
+  troubleshooting: allow it from anywhere and *limit* it, which is what the rules do and what long
+  IPv4 practice supports. The limit is generous against real diagnostic traffic — `ping` sends
+  1/second, and a traceroute's `time-exceeded` replies each come from a *different* router, so a
+  per-source bucket of 10/second is never reached by a legitimate operator. It is reached by
+  `ping -f`, which is the traffic it is for.
+
+  What is still open is one message rather than the posture. `fragmentation-needed` is a *subtype*
+  of `destination-unreachable`, and the IPv4 rules limit `destination-unreachable` as a whole — so
+  the signal a black-holed TCP connection depends on shares a bucket with every diagnostic message.
+  **The IPv6 side already makes the carve-out**, accepting `packet-too-big` ahead of and outside the
+  limit, so the two families disagree about a message that is not a diagnostic at all. Mirroring the
+  IPv6 decision is one rule and no change of posture. Anchored to `ch1-5`.
 
 - **ch1-U4 — the bacula templates have no traffic to argue from.** No play in a fleet enables any
   bacula flag; the operator backs up with the backup tool. Their postures are recorded as what the rules do
   rather than as a choice, and say so. Either they get argued against real bacula behaviour or they
   get removed, and doing nothing leaves three templates whose notes are honest about being
   inherited. Anchored to `ch1-6`.
+
+- **ch1-U5 — the host has two things that restore a ruleset at boot, and one of them begins by
+  deleting everything.** The package persists through `netfilter-persistent`, which is right: it
+  installs `/usr/sbin/afirewall` as a plugin, and `stop()` deletes only the four `a-firewall-*`
+  tables rather than flushing, so nothing this package does can remove somebody else's rules. But
+  `a play` in a fleet also enables `nftables.service`, and Debian's shipped
+  `/etc/nftables.conf` — read on the workstation, not recalled — opens with `flush ruleset` and
+  then declares a `table inet filter` whose chains state **no policy at all**, which means accept.
+  If that unit loads after the plugin, the host has no firewall and three chains that admit
+  everything. Both units order themselves against `network-pre.target` and, as far as this repo can
+  tell, against each other not at all. **This is the ordering hazard, and it is not chain priority**
+  — the verdict is order-independent there, because netfilter requires every base chain at a hook to
+  accept and an `accept` in one does not skip the others. What is not settled is the unit ordering
+  itself, which has to be read on a host. Anchored to `ch1-1`.
+
+- **ch1-U6 — the package claims pure nft and ships nothing that keeps a public installation pure.**
+  fail2ban's Debian default `banaction` is iptables, so a stranger who installs afirewall and
+  fail2ban gets exactly the mixture this package exists to leave. It *functions* — a ban lands in
+  the `filter` table at priority 0, ahead of this package's input chain at 20, so it takes effect —
+  but functioning is not the claim. The operator pins `banaction = nftables` in ansible
+  (`a play`), which means the fix exists and lives in the wrong repository: nobody installing
+  the package gets it. Anchored to `ch1-7`.
 
 ## Glossary
 
