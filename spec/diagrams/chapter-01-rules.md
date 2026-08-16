@@ -152,12 +152,40 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   what `wg0` carried), but the model it encodes is "a host has one external interface", and the
   measurement says a host here has several with different trust levels.
 
-  What would settle it is not a better heuristic. Deriving it from "which address is globally
-  routable" fails on a NAT'd VPS, whose only interface is external and privately addressed. **The
-  answer is to let it be stated** — the operator knows which network they do not trust, and the
-  kernel cannot — with discovery kept as the default for the single-NIC case it was written for.
-  Where that statement lives is the open part: `ch1-2` keeps `afirewall.conf` a flat list of
-  service flags, so it is not a config key without changing what that file is. Anchored to `ch1-1`.
+  **Neither of the two firewalls most people meet guesses at this, and they disagree about how not
+  to** — read out of the packages on 2026-08-16 rather than recalled.
+
+  `ufw` does not ask the question at all. There is no interface discovery anywhere in it, no
+  source-based anti-spoofing, and — contrary to what one would expect — no `rp_filter` setting in
+  its `sysctl.conf` either. What it has instead is `ufw-not-local`: `addrtype --dst-type
+  LOCAL/MULTICAST/BROADCAST` returns, and everything else is dropped. That asks **"is this packet
+  addressed to me?"**, which is interface-agnostic, so no interface ever has to be identified.
+
+  `firewalld` makes you answer it. Nine zones — one of them called `external` — a `DefaultZone` of
+  `public`, and no discovery code at all: an interface is assigned to a zone by the operator or by
+  NetworkManager, and an unassigned one falls to the default. Stated, with a safe fallback.
+
+  **So one sidesteps the question and the other requires an answer, and this package is alone in
+  inferring one.**
+
+  **The kernel's own answer is weaker than it looks.** Measured across the hosts: every interface on
+  every host carries `rp_filter=2`, which is *loose* reverse-path filtering — it drops only sources
+  unreachable by any route, not a private source arriving where it could not have come from. And
+  **there is no IPv6 rp_filter at all**; the file does not exist. So for IPv6 a firewall is the only
+  place anti-spoofing can live, which makes `SPOOFING` matter most in exactly the family whose
+  ruleset has never loaded (`ch1-U10`).
+
+  **What follows.** A better heuristic is not available — deriving "external" from "which address is
+  globally routable" fails on a NAT'd VPS, whose only interface is external and privately addressed.
+  So the answer is firewalld's: **let it be stated**, with discovery as the default for the
+  single-NIC case this was written for. And `ufw`'s check is worth having beside it rather than
+  instead of it: a `fib daddr type local` drop needs no statement and holds even when the statement
+  is wrong, while catching nothing the spoof list catches — the two fail in different directions,
+  which is the argument for both.
+
+  Where the statement lives is the remaining part. `ch1-2` keeps `afirewall.conf` a flat list of
+  service flags, and firewalld's precedent is to keep zone assignment out of the service definitions
+  entirely. Anchored to `ch1-1`.
 
 - **ch1-U7 — `source-quench` is still accepted and RFC 6633 deprecated it.** Routers no longer send
   it and hosts are told to ignore it, so the rule can only ever admit something forged. It went
