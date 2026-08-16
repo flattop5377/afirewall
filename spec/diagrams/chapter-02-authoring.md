@@ -26,8 +26,8 @@ find. `ch1-U1` was a sweep over 36 files; nothing should ever need that sweep ag
 **Named services stay, and the reason is not convenience either.** Going to bare port and protocol
 was the obvious alternative and it is the wrong one: `ch1-5` decides a posture by asking *who is
 refused when the limit bites*, and a rule for `tcp/9999` has no counterparty to answer with. The
-name is what the argument attaches to. What the name must NOT do is imply one port — a forwarding host
-wants udp and tcp on the same name — so a service is a set of protocol/port pairs under one flag.
+name is what the argument attaches to. What the name must NOT do is imply one port — a service can
+want udp and tcp on the same number — so a service is a set of protocol/port pairs under one flag.
 
 *Shapes and colours: [legend](legend.md).*
 
@@ -60,9 +60,9 @@ flowchart TD
 
 | id | node | claim |
 |---|---|---|
-| `ch2-1` | a host runs a service this package ships no template for | **Coverage is a real defect and not a backlog item.** Seventeen inbound templates and a handful of outbound ones is a small fraction of what a Debian host runs, and the operator itself has already hit it twice — a forwarding host on udp 7777 and postgres both have plays with no flag to enable. Every user hits this eventually, and the failure is that they stop using the package rather than that they complain |
+| `ch2-1` | a host runs a service this package ships no template for | **Coverage is a real defect and not a backlog item.** Seventeen inbound templates and a handful of outbound ones is a small fraction of what a Debian host runs, and two of the first three services one operator went looking for had no flag to enable. Every user hits this eventually, and the failure is that they stop using the package rather than that they complain |
 | `ch2-2` | the service is named | **The name is what an argument can attach to, which is why bare port/protocol was rejected.** `ch1-5` decides a posture by asking who is refused when the limit bites — a party the operator chose, a crowd sharing an address, or an anonymous peer that replaces itself. `tcp/9999` cannot answer that question and `postgres` can. A configuration format that could only say the port would make `ch1-6` unwritable, and losing the argument is a worse outcome than losing the coverage it was meant to buy |
-| `ch2-3` | one name carries any mixture of protocol and port | **A service is a set of protocol/port pairs, not one port**, because real services are not one port: a forwarding host wants udp and tcp on the same number, bacula uses three consecutive ports across three roles, and a range is one service rather than a hundred. The flag stays one key — `ch1-2` requires ansible to compose the config by appending single lines — so the multiplicity lives in the template rather than in the config |
+| `ch2-3` | one name carries any mixture of protocol and port | **A service is a set of protocol/port pairs, not one port**, because real services are not one port: a service can want udp and tcp on the same number, bacula uses three consecutive ports across three roles, and a range is one service rather than a hundred. The flag stays one key — `ch1-2` requires ansible to compose the config by appending single lines — so the multiplicity lives in the template rather than in the config |
 | `ch2-4` | what is this limit's posture, and why? | **It is a subcommand of `afirewall`, because the person who needs it has not heard of it.** A separate authoring tool is something you must already know exists; a subcommand appears in the help of the command they have already run. That carries a fix with it: `afirewall` exits on `geteuid() != 0` *before parsing arguments*, so `--help` needs root today — which is right for loading a ruleset and wrong for writing a file into a source tree, and would make the discoverable option undiscoverable. **The tool asks, and it is the asking that makes this chapter worth building.** A generator that only saved typing would be a convenience; one that refuses to render a limit without an argument makes `ch1-6` structural rather than aspirational. The question is asked at the moment the person has the answer — they know what the service is and who talks to it — instead of by a reviewer months later who does not |
 | `ch2-5` | no answer, no template | **Refusing is the feature.** A default posture would be the whole failure of this package's history repeating: the twelve instrumenting templates were read as broken by one reader and others were rewritten to enforce by another, precisely because a posture with no argument is indistinguishable from an accident. A tool that silently picked one would manufacture that ambiguity at scale |
 | `ch2-6` | rendered in the canonical shape, both families | **Both families, always, or the generated service is an IPv4 service wearing a neutral name.** The IPv6 ruleset in this package went years without ever loading because ipv4-only assumptions were copied into it, and a tool that made v4 easy and v6 optional would rebuild that fault deliberately. The shape is the package's existing one — set declarations, then the chain, at the established indentation — because a generated template that looks generated splits the package into two dialects |
@@ -105,7 +105,7 @@ shipped with the package (`ch2-7`).
   is whether that limit is stated to the user or discovered by them. Anchored to `ch2-6`.
 
 - **ch2-U3 — no reading has been taken of what people actually fail to find.** The two gaps named
-  here are the operator's own, which is a sample of one. Whether the missing templates are mostly
+  here come from one operator's hosts, which is a sample of one. Whether the missing templates are mostly
   databases, mostly game and media services, or mostly things nobody would guess is a question about
   other people's hosts, and it decides whether a generator is the whole answer or half of one.
   Anchored to `ch2-1`.

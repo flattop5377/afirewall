@@ -139,6 +139,10 @@ table ip a-firewall-inbound-ipv4 {
   #
   # The message that must not share this budget is carved out below.
   #
+  # WHAT IS NOT HERE: `source-quench`. RFC 6633 deprecated it in 2012 - routers stopped sending it
+  # and hosts are told to ignore it - so a rule accepting it could only ever admit something
+  # forged, and the budget it took was taken from the diagnostics that do arrive.
+  #
   chain VALID_ICMP {
     ##
     # PATH-MTU DISCOVERY IS NOT A DIAGNOSTIC, so it is not in the bucket the diagnostics share.
@@ -153,7 +157,6 @@ table ip a-firewall-inbound-ipv4 {
 
     icmp type echo-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type redirect update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type echo-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip saddr limit rate 10/second } accept
@@ -480,7 +483,6 @@ table ip a-firewall-outbound-ipv4 {
 
     icmp type echo-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type source-quench update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type redirect update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type echo-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip daddr limit rate 10/second } accept

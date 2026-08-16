@@ -35,7 +35,7 @@
     #
     # Same argument as the ORPort beside it: the source is forgeable, but a directory client
     # refused here is interchangeable and reconnects, so the collateral of a wrong drop is
-    # nothing the operator chose. Note that this flag is meant to be left disabled — current Tor
+    # nobody the operator chose. Note that this flag is meant to be left disabled — current Tor
     # serves directory data over the ORPort — so the posture matters mainly for being correct
     # if it is ever turned on.
     #

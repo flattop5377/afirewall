@@ -50,8 +50,8 @@ def authoring():
 @pytest.mark.proves("ch2-1", depth="unit")
 def test_the_coverage_gap_is_measured():
     unwatched("ch2-1", "what services people actually fail to find a flag for — which is ch2-U3. "
-                       "The two gaps named in the chapter are this deployment's own and are a sample "
-                       "of one, and whether the missing templates are mostly databases or mostly "
+                       "The two gaps named in the chapter come from one operator's hosts and are a "
+                       "sample of one, and whether the missing templates are mostly databases or mostly "
                        "things nobody would guess decides whether a generator is the whole answer")
 
 
@@ -67,12 +67,12 @@ def test_a_service_is_named_rather_than_a_bare_port():
 
 @pytest.mark.proves("ch2-3", depth="structural")
 def test_one_name_carries_more_than_one_protocol_and_port():
-    """A forwarding host wants udp and tcp on the same number and bacula uses three ports across three
+    """A service can want udp and tcp on the same number, and bacula uses three ports across three
     roles. A tool that takes one port makes the common awkward case unreachable."""
     text = authoring()
     assert re.search(r"ports\b|nargs\s*=\s*['\"][+*]['\"]|append", text), (
         "the authoring path looks like it takes a single protocol/port, so a service that is more "
-        "than one — a forwarding host on udp and tcp, a port range — has no way to be expressed")
+        "than one — udp and tcp on one number, a port range — has no way to be expressed")
 
 
 @pytest.mark.proves("ch2-4", depth="structural")

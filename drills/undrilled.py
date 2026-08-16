@@ -2,7 +2,7 @@
 
 A claim nothing cites is **absent** from the board. A claim cited by a skipping drill is
 **unwatched** — the observation is named, and nobody has taken it. Those are different facts about
-the operator and the board is right to spell them differently.
+a project and the board is right to spell them differently.
 
 Most drills here skip, and that is not a defect being tolerated. This fleet was built before it was
 specified, so the honest position is a written claim and a named observation that has not been made

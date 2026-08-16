@@ -31,15 +31,15 @@
   #
   chain ACCEPT_SSH {
     ##
-    # LIMIT POSTURE: instrument — the admin path is the one service the operator cannot afford
-    # to lose, and a limit that drops is a limit an attacker aims.
+    # LIMIT POSTURE: instrument — the administrative path is the one service an operator cannot
+    # afford to lose, and a limit that drops is a limit an attacker aims.
     #
     # A forged SYN carrying the controller's address costs nothing to send and spends the
     # controller's allowance for the 900s this set holds it, which locks administration out
-    # of the host. Chapter 7 keeps a console fallback because ssh can be lost; it should not
-    # be lost to our own rule. What actually refuses an ssh attacker here is fail2ban, pinned
-    # to the nftables backend in a play, and it decides on evidence in the log rather
-    # than on a source address anyone can write.
+    # of the host. Keep a console route, because ssh can be lost; it should not
+    # be lost to our own rule. What actually refuses an ssh attacker is fail2ban with the
+    # nftables banaction (see README), which decides on evidence in the log rather than on a
+    # source address anyone can write.
     #
       ##
       # Rate limit new connections per source ip address

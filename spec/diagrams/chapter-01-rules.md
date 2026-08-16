@@ -1,6 +1,6 @@
 # Chapter 1 — the ruleset a host gets is the one somebody can argue for
 
-> **As the person who has to enable this on a live hosts I want every rule it generates to carry
+> **As the person who has to enable this on live hosts I want every rule it generates to carry
 > the reason it exists, so that the next reader inherits an argument instead of a habit — and so
 > nobody "fixes" a decision by mistaking it for an oversight.**
 
@@ -33,17 +33,17 @@ because **what separates them is who gets refused when the limit bites** (`ch1-5
 alongside the `orport` and `dirport` rules it now agrees with — the one behavioural change in the
 pass, made while the firewall is enabled on no host.
 
-**This package is installed by strangers, and that changes what a default is for.** The operator is
-one consumer of afirewall and not the audience: a default tuned to what these hosts happen to run
-is a default that fails somebody else silently. It is why ICMP is limited rather than closed —
+**This package is installed by strangers, and that changes what a default is for.** Whoever wrote
+it is one consumer and not the audience: a default tuned to what one operator's hosts happen to run
+is a default that fails everybody else silently. It is why ICMP is limited rather than closed —
 crippling a stranger's ability to do network discovery or troubleshoot their own host is a worse
-failure than admitting some noise — and it is the standing reason a posture argued from this
-deployment's traffic has to say so.
+failure than admitting some noise — and it is the standing reason a posture argued from one
+operator's traffic has to say so.
 
-**Two more things bound every answer here and are not open to trade.** afirewall is **pure nft** — the
-deployment is leaving iptables deliberately, which is why fwknop was rejected for depending on it. And
+**Two more things bound every answer here and are not open to trade.** afirewall is **pure nft** — this package is
+leaving iptables deliberately, which is why fwknop was rejected for depending on it. And
 it must stay **administrable through ansible**: a host's ruleset follows from the groups the host is
-in, which a fleet delivers by restoring the packaged `afirewall.conf` at the start of a converge
+in, which a configuration manager delivers by restoring the packaged `afirewall.conf` at the start of a run
 and letting each service play add its own flags. That contract is what `ansible` chapter 9 is
 written against, and this package's job is to keep its half of it.
 
@@ -87,19 +87,19 @@ flowchart TD
 |---|---|---|
 | `ch1-1` | a host that must answer some traffic and refuse the rest | **The generator's whole job is one host's ruleset, and both directions default to drop** — `base.rules` gives `hook input priority 20; policy drop` and `hook output priority filter; policy drop`, with a service's reply path admitted by that service's own flag rather than by one blanket `ct state established,related accept`. That is a deliberately unforgiving posture: an omitted flag is a dead service rather than a narrower one, which is a strong reason for the composition in `ch1-2` to be reviewable. **What this covers is a host, and only a host** — there is no `forward` chain in either family, so traffic a machine routes rather than terminates passes through untouched. That is a defensible scope for a host firewall and it is nowhere stated, which is `ch1-U8`: somebody enabling this on a router will believe it filters what it does not |
 | `ch1-9` | incoherent traffic is dropped and counted before any flag is consulted | **The package's other reason to exist, and one it had never claimed.** Four chains run at `priority raw`, ahead of every service decision and independent of every flag: `SPOOFING` drops source addresses that cannot legitimately arrive on the external device, `INVALID_FLAGS` drops TCP segments whose flag combinations RFC 9293 does not permit — no flags at all, FIN with SYN, the scan fingerprints — `FRAGMENTS` drops what should not be fragmented, and `PORT_ZERO` drops port zero in either direction. **None of them consults the configuration**, so this is what a host gets from installing the package at all, before anybody decides what it runs. Every one carries a named counter, which is the difference between a claim and a rule: `nft list counters` says whether it has ever fired, so a rule that does nothing is visible rather than assumed. This is the property that other firewalls did not have, and it is why they were replaced rather than configured |
-| `ch1-2` | a plain conf of flags | **The interface is `<direction>.<service>: enable` lines in a plain `afirewall.conf`, and keeping it plain is the requirement** — a fleet composes a host's ruleset by restoring the packaged defaults at the start of a converge and letting each service play add the flags it needs, so what afirewall reads has to be something ansible can add a line to without parsing a structure. **Administrable through ansible is a design constraint on this package, not a property of the consumer**, and a richer config format that made this harder would be a regression however much cleaner it read |
+| `ch1-2` | a plain conf of flags | **The interface is `<direction>.<service>: enable` lines in a plain `afirewall.conf`, and keeping it plain is the requirement** — a configuration manager composes a host's ruleset by restoring the packaged defaults at the start of a converge and letting each service play add the flags it needs, so what afirewall reads has to be something ansible can add a line to without parsing a structure. **Administrable through ansible is a design constraint on this package, not a property of the consumer**, and a richer config format that made this harder would be a regression however much cleaner it read |
 | `ch1-3` | is this service's source address forgeable? | **The first question, and only the first** — a limit that drops is a limit an attacker can aim. On UDP, where spoofing is trivial and stateless, forging the legitimate peer's address exhausts that peer's budget and silences precisely the host the rule was meant to protect. **On TCP the connection count is inflatable too, which an earlier cut of this row denied.** A forged SYN that the chain accepts reaches the confirm hook, so its conntrack entry is inserted and counts, and it lingers for the SYN_RECV timeout — 60s by default. The asymmetry is cost rather than possibility: filling a connection count needs forging sustained across that timeout, while one forged packet holds an address in a rate-limit set for the set's whole timeout, 900s in most templates here. **The one key that genuinely cannot be forged is `meta skuid`**, read from the local socket's owner, which is why the outbound templates are the clean case. The question is asked of the service and its transport together, never answered by category |
 | `ch1-4` | instrument: count it and let it through | **A limit has three endings, not two, and the third is the one that gets misread.** `… } continue` falls to the unconditional accept below and instruments. `… over N } drop` refuses in as many words. But `… limit rate 10/second } accept` makes the limit a *match*: over the rate the rule stops matching, nothing beneath it accepts, and the chain policy drops — so it enforces without the word `drop` appearing anywhere. Every ICMP rule in `base.rules` is that third form, one file away from thirty rules in the first, so the posture is read from **the rule's own verdict** rather than from the presence of `drop`. **`continue` followed by an unconditional accept is a deliberate fail-open, and it buys two things** — an attacker cannot use the limit as a weapon against a named peer, and dynamic-set exhaustion degrades to "no accounting" rather than "no service", since a failed `add` on a full set leaves the packet to reach the accept. The counters remain readable with `nft list set`, so the traffic is *observed* without being *judged*. What this costs is real and should be said: nothing here stops a flood, and the package is not claiming to |
 | `ch1-5` | enforce: a bounded rate, and collateral nobody will miss | **Spoofable does not automatically mean instrument-only** — tor and btc are the worked example, and working through every template turned the rule into something sharper than "is the rate bounded". A bounded rate is necessary and not sufficient: syslog's rate is bounded far more tightly than bitcoin's and still must not enforce. **The question that actually separates the two is who gets refused when the limit bites.** If the collateral is a counterparty the operator chose and cannot substitute — the admin on ssh, a correspondent MTA, a log shipper, a VPN peer, a host whose heartbeat is the alarm — enforcing hands an attacker a way to remove exactly that party, and instrumenting is right however bounded the rate. If the collateral is anonymous, self-replacing, and not sharing its address with anyone who matters — a bitcoin peer, a tor relay — a wrong drop costs nothing and enforcing is right. HTTP fails the test on the third clause rather than the second: the address is shared by a crowd, so the party refused is a stranger the site does want |
 | `ch1-6` | the argument is recorded beside the rule | **The claim that would have prevented both mistakes.** A template carrying a limit records, next to it, whether that limit enforces or instruments and why — so a later reader inherits a decision rather than guessing at one. This is not documentation for its own sake: the twelve instrumenting templates were read as broken by one reader, and the enforcing ones were *written* by another who had no argument to read. An unexplained posture is indistinguishable from an accident, and both readers acted on that indistinguishability |
-| `ch1-7` | pure nft, and the ruleset loads whole or not at all | **iptables is not an option, and the reason is a decision the operator already took** — fwknop was rejected for depending on it. The other half is a property of nft the package already respects: a table containing one unloadable rule fails entirely, so `meta skuid nosuchuser` costs the host every rule in that family rather than one service. That is why services whose user is absent are disabled before generation rather than left to fail at load, and it is why validation runs ahead of `stop()`. **The first `nft -c` run taken against this ruleset proved the point immediately**: `templates/ipv6/inbound/tcp8000.rules` matched on `ip saddr` inside an `ip6` table, which is a parse error rather than a rule that matches nothing — so every host with `inbound.tcp8000` enabled would have had **no IPv6 firewall at all**, not one missing a rule |
+| `ch1-7` | pure nft, and the ruleset loads whole or not at all | **iptables is not an option, and the reason is a decision this package already took** — fwknop was rejected for depending on it. The other half is a property of nft the package already respects: a table containing one unloadable rule fails entirely, so `meta skuid nosuchuser` costs the host every rule in that family rather than one service. That is why services whose user is absent are disabled before generation rather than left to fail at load, and it is why validation runs ahead of `stop()`. **The first `nft -c` run taken against this ruleset proved the point immediately**: `templates/ipv6/inbound/tcp8000.rules` matched on `ip saddr` inside an `ip6` table, which is a parse error rather than a rule that matches nothing — so every host with `inbound.tcp8000` enabled would have had **no IPv6 firewall at all**, not one missing a rule |
 | `ch1-8` | a ruleset whose every rule can be defended | **The measure is that a reader can ask "why does this rule do that?" and the file answers** — not that the ruleset is maximally strict, which is a different and lesser property. A rule that is defensible can be changed deliberately; a rule that is merely present gets changed by whoever is most confident |
 
 ## Input → process → output
 
 **Input** — a host that must answer some traffic and refuse the rest (`ch1-1`).
 
-**The interface stays plain, because a fleet composes it.** A host's ruleset is selected by flags
+**The interface stays plain, because the configurator composes it.** A host's ruleset is selected by flags
 in `afirewall.conf`, which ansible builds by restoring the packaged defaults and letting each
 service play add what it needs (`ch1-2`).
 
@@ -127,10 +127,9 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   never passing the chain that carries this package's `policy drop`. So on any machine that
   forwards, afirewall governs what the machine itself answers and nothing it passes along.
 
-  **This was found by trying to write a rule that would have done nothing.** The operator's forwarding host
-  publishes udp 7777 by DNAT to a host across a tunnel and runs no listener, so an `a flag for the published port`
-  flag would have parsed, persisted, survived a reload and opened nothing — the `inbound.tor`
-  failure again, generated faster. Host-only is a reasonable scope for a host firewall, and the
+  **This was found by trying to write a rule that would have done nothing.** A host that publishes a
+  port by DNAT to a machine across a tunnel terminates none of that traffic, so a flag opening the
+  published port would have parsed, persisted, survived a reload and opened nothing. Host-only is a reasonable scope for a host firewall, and the
   open part is that the package claims neither the scope nor its limit anywhere a reader will find
   it. Whether the answer is a sentence in the README or a `forward` chain is undecided; the
   sentence is owed either way. Anchored to `ch1-1`.
@@ -140,8 +139,8 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   unremarked while the timestamp, information and address-mask messages were removed, because those
   were asked about and this was not. Anchored to `ch1-1`.
 
-- **ch1-U4 — the bacula templates have no traffic to argue from.** No play in a fleet enables any
-  bacula flag; the operator backs up with the backup tool. Their postures are recorded as what the rules do
+- **ch1-U4 — the bacula templates have no traffic to argue from.** They ship with the package and
+  nothing known to it has ever enabled them. Their postures are recorded as what the rules do
   rather than as a choice, and say so. Either they get argued against real bacula behaviour or they
   get removed, and doing nothing leaves three templates whose notes are honest about being
   inherited. Anchored to `ch1-6`.
@@ -150,7 +149,7 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   deleting everything.** The package persists through `netfilter-persistent`, which is right: it
   installs `/usr/sbin/afirewall` as a plugin, and `stop()` deletes only the four `a-firewall-*`
   tables rather than flushing, so nothing this package does can remove somebody else's rules. But
-  `a play` in a fleet also enables `nftables.service`, and Debian's shipped
+  a configuration manager that also enables `nftables.service` meets a problem: Debian's shipped
   `/etc/nftables.conf` — read on the workstation, not recalled — opens with `flush ruleset` and
   then declares a `table inet filter` whose chains state **no policy at all**, which means accept.
   If that unit loads after the plugin, the host has no firewall and three chains that admit
@@ -164,9 +163,9 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   fail2ban's Debian default `banaction` is iptables, so a stranger who installs afirewall and
   fail2ban gets exactly the mixture this package exists to leave. It *functions* — a ban lands in
   the `filter` table at priority 0, ahead of this package's input chain at 20, so it takes effect —
-  but functioning is not the claim. The operator pins `banaction = nftables` in ansible
-  (`a play`), which means the fix exists and lives in the wrong repository: nobody installing
-  the package gets it. Anchored to `ch1-7`.
+  but functioning is not the claim. The fix is one line in fail2ban's own configuration and is
+  documented in the README, which means it exists and lives outside this package: nobody installing
+  it gets it, and nothing here tells them the mixture happened. Anchored to `ch1-7`.
 
 ## Glossary
 

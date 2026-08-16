@@ -58,8 +58,8 @@ def test_a_flag_is_set_by_a_subcommand_that_can_refuse_it():
 
 @pytest.mark.proves("ch3-3", depth="structural")
 def test_it_can_be_asked_without_being_told():
-    """A config manager asks before it acts. This deployment has already had a play read a fabricated
-    success out of check mode and conclude an LVM volume existed on a host with no LVM."""
+    """A config manager asks before it acts, and a play that reads a fabricated success acts on
+    it — ansible's --check returns rc 0 with empty stdout for a command that never ran."""
     assert "--dry-run" in MAIN.read_text(), (
         "there is no dry run, so a configurator's check mode can only pretend — and a `command:` "
         "under ansible's --check returns rc 0 with empty stdout rather than an undefined register, "
@@ -119,5 +119,5 @@ def test_what_it_reports_cannot_be_misread():
 @pytest.mark.proves("ch3-7", depth="integration")
 def test_a_converged_host_is_quiet():
     unwatched("ch3-7", "a fleet converge run twice, with the second run reporting no change on any "
-                       "host — which is ch3-U3 and cannot be taken until a play is in the "
-                       "converge at all (ansible ch9-11)")
+                       "host — which is ch3-U3 and cannot be taken until the configurator's firewall "
+                       "play is part of a run at all")

@@ -28,11 +28,11 @@
     ##
     # LIMIT POSTURE: instrument — the authentication is what keeps strangers out, not this.
     #
-    # The legitimate senders are a small known set and the port is TLS from the first byte, so
-    # what refuses a stranger is the handshake and the MTA's relay rules. Enforcing would add
-    # exactly one capability to the operator — anyone able to forge a known client's address can
-    # defer that known client's mail — and no capability the authentication does not already
-    # have. Counted and admitted.
+    # 2194 is unassigned at IANA, so a host answering on it is running something whose clients
+    # it knows by name rather than something the internet dials. Where the transport
+    # authenticates before it carries anything, the handshake is what refuses a stranger, not
+    # this. Enforcing would add exactly one capability — anyone able to forge a known client's
+    # address can lock that client out — and none the authentication does not already have.
     #
     ct state new tcp dport 2194 update @tcp2194_rate_limit { ip6 saddr limit rate 5/minute } continue
     ct state new tcp dport 2194 add @tcp2194_connection_limit { ip6 saddr ct count over 20 } continue

@@ -89,7 +89,7 @@ def test_both_directions_drop_by_default():
 
 @pytest.mark.proves("ch1-2", depth="structural")
 def test_the_config_stays_a_plain_list_of_flags():
-    """Administrable through ansible is a constraint on THIS package. A fleet composes a host's
+    """Administrable through ansible is a constraint on THIS package. A configurator composes a host's
     ruleset by restoring this file and letting each service play add a line, so anything that made
     the format structured — a nested mapping, a list, a section header — would break the consumer
     however much cleaner it read."""
@@ -152,7 +152,7 @@ def test_every_limit_records_its_posture():
     # Two citations at the SAME depth do not stay apart: they reduce to one status, a story drops
     # failing citations by design, and the passing one wins. So a subject with two structural
     # drills reads PROVEN off whichever holds while the other is red, and nothing on the board
-    # says so — ansible's ch9-6 was green exactly that way with a flag that named nothing.
+    # says so — a consumer's board read green exactly that way with a flag that named nothing.
     # One depth, one drill; the ordering below then keeps the second half honest, because the
     # comparison only runs once the notes it compares are known to exist.
     noted = [name for name, text in templates() if _POSTURE.search(text)]
@@ -178,7 +178,7 @@ def test_every_limit_records_its_posture():
 
 @pytest.mark.proves("ch1-7", depth="structural")
 def test_nothing_reaches_for_iptables():
-    """Pure nft is a decision the operator already took — fwknop was rejected for depending on
+    """Pure nft is a decision this package already took — fwknop was rejected for depending on
     iptables, and fail2ban is pinned to the nft backend for the same reason.
 
     ASSERTED ON CODE AND NOT ON PROSE. The first version of this flagged three files and all three

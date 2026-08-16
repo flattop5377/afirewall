@@ -6,6 +6,17 @@
    - Be easy to install, configure, and maintain
    - Be Ansible friendly
    - Use common tools and formats
+## What this covers
+
+A host, and only a host. afirewall hooks `input` and `output`, both with `policy drop`, plus a
+`prerouting` chain that drops incoherent traffic before anything else looks at it.
+
+**It does not hook `forward`.** Traffic a machine *routes* — a published container port, a DNAT to
+another host, anything crossing a tunnel to somewhere else — does not pass through any chain this
+package installs, and the kernel's own default at that hook is accept. So on a machine with
+`ip_forward` turned on, afirewall governs what the machine itself answers and nothing it passes
+along. If you need the forwarded path filtered, this is not yet the tool for it.
+
 ## Running alongside other things that write packet filter rules
 
 afirewall keeps to its own four tables — `a-firewall-inbound-ipv4`, `a-firewall-outbound-ipv4` and

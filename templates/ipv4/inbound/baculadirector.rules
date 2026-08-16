@@ -28,10 +28,9 @@
     ##
     # LIMIT POSTURE: instrument — recorded as what the rules do, not as an argued choice.
     #
-    # NOTHING HAS EXERCISED THIS TEMPLATE. The operator backs up with the backup tool (the consumer's spec
-    # 2) and these bacula templates have never been exercised, so there is no traffic to argue
-    # from and the posture below is inherited rather than chosen. If bacula is ever deployed
-    # the argument has to be made against its own behaviour before this line is believed.
+    # NOTHING HAS EXERCISED THIS TEMPLATE. It ships with the package and has no traffic behind
+    # it, so the posture below is inherited from the templates beside it rather than chosen. If
+    # you deploy bacula, make the argument against its own behaviour before believing this.
     #
     ct state new tcp dport 9101 update @baculadirector_rate_limit { ip saddr limit rate 5/minute } continue
     ct state new tcp dport 9101 add @baculadirector_connection_limit { ip saddr ct count over 20 } continue

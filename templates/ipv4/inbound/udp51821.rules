@@ -1,0 +1,45 @@
+  #############################################################################
+  #
+  ## UDP 51821 Rules
+  #
+  # A second WireGuard instance, on a port that is not the default. A host that runs more than
+  # one tunnel needs a second listener, and 51820 is already spoken for; the number here is
+  # arbitrary and the template is named for it rather than for whatever the tunnel carries.
+  #
+  #############################################################################
+
+
+  ##
+  # UDP51821 rate limit
+  #
+  set udp51821_rate_limit {
+    type ipv4_addr
+    size 65535
+    timeout 900s
+    flags dynamic
+  }
+
+  ##
+  # UDP51821 connection limit
+  #
+  set udp51821_connection_limit {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+
+  chain ACCEPT_UDP51821 {
+    ##
+    # LIMIT POSTURE: instrument — the same argument as inbound.wireguard, and for the same
+    # reasons.
+    #
+    # WireGuard answers load with a cookie, which is a rate defence that can still tell a real
+    # peer from a forged one; this rule cannot. The source is UDP and costs nothing to forge,
+    # and a peer on a tunnel is one the operator chose rather than one of a crowd — so a limit
+    # that drops would let anyone silence exactly the tunnel the rule exists to protect.
+    #
+    ct state new udp dport 51821 update @udp51821_rate_limit { ip saddr limit rate 5/minute } continue
+    ct state new udp dport 51821 add @udp51821_connection_limit { ip saddr ct count over 20 } continue
+    ct state new,established udp dport 51821 accept
+  }
