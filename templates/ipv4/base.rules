@@ -171,6 +171,36 @@ table ip a-firewall-inbound-ipv4 {
   #
   #############################################################################
 
+  #############################################################################
+  #
+  ## Traffic that arrived here but was never addressed here
+  #
+  # A drop for anything whose destination is not an address of this host, which ufw has carried for
+  # years as `addrtype --dst-type LOCAL`. It reads NO FLAG and names NO INTERFACE, so it is one of
+  # the protections that does not depend on the operator having correctly said which network is
+  # untrusted.
+  #
+  # WHAT IT IS NOT is a substitute for the SPOOFING chain, and an earlier draft of chapter 6 said
+  # otherwise. That chain asks whether a SOURCE could have arrived where it did; this asks whether
+  # the packet was ever for us. Neither covers the other and neither compensates for the other being
+  # misconfigured - they are two protections, not a protection and its fallback.
+  #
+  # COUNTED, because on a normal host the routing decision has already sent everything addressed
+  # elsewhere to the forward hook, so this may never fire. `nft list counters` is what says whether
+  # it earns its place here rather than an assumption either way.
+  #
+  #############################################################################
+
+  counter NUMBER_OF_NOT_LOCAL_DROPPED {
+  }
+
+  chain NOT_LOCAL {
+    type filter hook input priority raw; policy accept;
+
+      fib daddr type { local, broadcast, multicast } accept
+      counter name NUMBER_OF_NOT_LOCAL_DROPPED drop
+  }
+
   # Count the number of packets dropped by the SPOOFING chain
   counter NUMBER_OF_SPOOFS_DROPPED {
   }

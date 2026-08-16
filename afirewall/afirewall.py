@@ -5,6 +5,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 import argparse
 import glob
+import json
 import os
 import pwd
 import re
@@ -33,10 +34,6 @@ class Family(Enum):
    IPV6 = 2
    LO = 3
 
-IPV4_ADDRESS_REGEX_PATTERN = r'.*src ([0-9\.]+) .*'
-IPV4_DEVICE_REGEX_PATTERN = '.*dev ([0-9a-zA-Z]+) .*'
-IPV6_ADDRESS_REGEX_PATTERN = '.*src ([0-9a-f:]+) .*'
-IPV6_DEVICE_REGEX_PATTERN = '.*dev ([0-9a-f:]+) .*'
 
 def stop():
    subprocess.run(args=[args.nft, 'delete', 'table', 'ip', 'a-firewall-inbound-ipv4'], capture_output=True, encoding='UTF-8')
@@ -119,217 +116,133 @@ def process_scripts(base_directory, interface, config):
 
    return output_name
 
-def get_external_interface_address_or_device(destination, regex):
-   ip_route = subprocess.run(args=[args.ip, '-o', 'route', 'get', 'to', destination], capture_output=True, encoding='UTF-8')
-   match = re.search(regex, ip_route.stdout)
-   if match is None: return None
-   return match.group(1)
+def ip_json(*arguments):
+   """Ask `ip` for structured output instead of parsing what it prints for humans.
 
-def get_external_ipv4_network(device):
+   THIS REPLACED FOUR REGEXES AND THE BUG THEY HID. Interface discovery used to match `ip`'s
+   human-readable output, and the IPv6 device pattern was `[0-9a-f:]+` - copied from the pattern for
+   an IPv6 ADDRESS onto the field holding a DEVICE NAME. It cannot match `ens3`, `eth0`, `enp4s0` or
+   any other normal interface, so IPv6 discovery returned nothing, `get_interfaces()` printed a
+   warning and carried on, and the host got no IPv6 ruleset at all. Every IPv6 rule this package
+   ships had never run anywhere.
+
+   Behind it sat a second one that would have surfaced the moment the first was fixed: the IPv6
+   network lookup searched `inet ` in the output of `ip -f inet6`, and on failing called
+   `sys.exit()`, so a corrected device name would have aborted the whole program on any host with
+   IPv6.
+
+   `-json` has been in iproute2 since 4.15 and bookworm ships 6.1, so nothing is given up for it.
+   What it buys is that neither of those bugs is expressible."""
+   done = subprocess.run(args=[args.ip, '-json', *arguments], capture_output=True, encoding='UTF-8')
+   if done.returncode != 0 or not done.stdout.strip():
+      return []
    try:
-      ip_ad_show = subprocess.run(args=[args.ip, '-o', '-f', 'inet', 'ad', 'show', device], capture_output=True, encoding='UTF-8')
-      match = re.search(r'.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
-      if match is None: sys.exit('Failed to find local IPV4 network in: ' + ip_ad_show.stdout)
-      return match.group(1)
-   except TypeError:
+      return json.loads(done.stdout)
+   except json.JSONDecodeError:
+      return []
+
+def get_external_network(device, address, family):
+   """The network of the address the route chose, which is not always the device's first.
+
+   Matched on the address rather than taken from the top of the list, because an interface commonly
+   carries several - a link-local beside a global, an alias, a second prefix - and the one that
+   matters is the one traffic to the outside actually leaves from."""
+   wanted = 'inet' if family == Family.IPV4 else 'inet6'
+   for link in ip_json('addr', 'show', device):
+      for info in link.get('addr_info', []):
+         if info.get('family') != wanted: continue
+         if info.get('scope') == 'link': continue
+         if info.get('local') != address: continue
+         return '{a}/{p}'.format(a=info['local'], p=info['prefixlen'])
+   return None
+
+#: Where the operator states which interface faces a network they do not trust. A FILE IN THE BASE
+#: DIRECTORY, and that is decided by how it has to persist: it must load and unload with the rules,
+#: so it has to be an input to generation. A command-line flag does not survive netfilter-persistent
+#: invoking this at boot with no arguments, and a unit drop-in or an environment file would be a
+#: second persistence mechanism beside the one this package already has.
+#:
+#: Not a key in afirewall.conf, and the reason is the consumer rather than the format: that file is
+#: composed by appending service flags, and a configuration manager restores one baseline shared by
+#: every host before each run. A per-host fact there is erased by that restore every converge.
+INTERFACES_FILE = 'interfaces.conf'
+
+def get_stated_external_device(base_directory):
+   """The interface the operator named, or None if they named none.
+
+   Silence means discover, which is what keeps a single-NIC host working with no configuration at
+   all - and that host is what this package was written for."""
+   path = base_directory + '/' + INTERFACES_FILE
+   if not os.path.exists(path):
       return None
+   stated = []
+   with open(path) as file:
+      for line in file:
+         li = line.split('#')[0].strip()
+         if not li:
+            continue
+         # A CLOSED VOCABULARY, ON PURPOSE, AND ONE THAT GROWS BY ADDING ROLES. The format is
+         # `<role>: <device>`, so the day a namespace needs an interface named as something other
+         # than external - the host end of a veth, say - that is a new role rather than a new file
+         # shape. Refusing an unknown one now is what makes adding one a visible decision instead
+         # of something that quietly started working.
+         if not li.startswith('external:'):
+            sys.exit(path + ': `' + li.split(':')[0].strip() + '` is not a role this version knows. '
+                     'The only one is `external`. The format is `<role>: <device>` so more can be '
+                     'added, but a role that is not recognised is refused rather than ignored.')
+         device = li.split(':', 1)[1].strip()
+         if device:
+            stated.append(device)
+   if not stated:
+      return None
+   if len(stated) > 1:
+      sys.exit(path + ' names more than one external interface ' + str(stated) + '. Only one is '
+               'supported: the rules are generated against a single external device, and silently '
+               'using the first would be worse than refusing.')
+   device = stated[0]
+   # REFUSED RATHER THAN FALLEN BACK FROM. A fallback to discovery would turn a typo into a firewall
+   # that protects a different interface than the one it was told to - quiet, plausible, and exactly
+   # the failure that inferring the interface at all was criticised for.
+   if not ip_json('link', 'show', device):
+      sys.exit('No such device on this host: ' + device + ' (named in ' + path + '). Nothing is '
+               'generated - a stated interface that is not there is a typo, not a reason to guess.')
+   return device
 
-def get_external_ipv6_network(device):
+def get_external_interface_by_name(device, family):
+   """Build an Interface for a device the operator named, per family.
+
+   A device with no address in a family gets no ruleset for it, which is the same answer discovery
+   gives when there is no route - a host without IPv6 is not a host with a broken IPv6 firewall."""
+   wanted = 'inet' if family == Family.IPV4 else 'inet6'
+   for link in ip_json('addr', 'show', device):
+      for info in link.get('addr_info', []):
+         if info.get('family') != wanted or info.get('scope') == 'link':
+            continue
+         try:
+            return Interface(info['local'], '{a}/{p}'.format(a=info['local'], p=info['prefixlen']),
+                             device, family)
+         except ValueError:
+            return None
+   return None
+
+def get_external_interface(destination, family):
+   """Which device and address this host reaches the outside on, per family."""
+   routes = ip_json('route', 'get', 'to', destination)
+   if not routes: return None
+   device, address = routes[0].get('dev'), routes[0].get('prefsrc')
+   if device is None or address is None: return None
+   network = get_external_network(device, address, family)
+   if network is None: return None
    try:
-      ip_ad_show = subprocess.run(args=[args.ip, '-o', '-f', 'inet6', 'ad', 'show', device], capture_output=True, encoding='UTF-8')
-      match = re.search(r'.*inet ([0-9\./]+) .*', ip_ad_show.stdout)
-      if match is None: sys.exit('Failed to find local IPV4 network in: ' + ip_ad_show.stdout)
-      return match.group(1)
-   except TypeError:
+      return Interface(address, network, device, family)
+   except ValueError:
       return None
 
 def get_external_ipv4_interface(destination):
-   address = get_external_interface_address_or_device(destination, IPV4_ADDRESS_REGEX_PATTERN)
-   device = get_external_interface_address_or_device(destination, IPV4_DEVICE_REGEX_PATTERN)
-   network = get_external_ipv4_network(device)
-   try:
-     interface = Interface(address, network, device, Family.IPV4)
-   except ValueError:
-     interface = None
-   return interface
+   return get_external_interface(destination, Family.IPV4)
 
 def get_external_ipv6_interface(destination):
-   address = get_external_interface_address_or_device(destination, IPV6_ADDRESS_REGEX_PATTERN)
-   device = get_external_interface_address_or_device(destination, IPV6_DEVICE_REGEX_PATTERN)
-   network = get_external_ipv6_network(device)
-   try:
-     interface = Interface(address, network, device, Family.IPV6)
-   except ValueError:
-     interface = None
-   return interface
-
-SERVICE_NAME = re.compile(r'^[a-z][a-z0-9]*$')
-
-#: Where a family keeps its address type and its selector. The whole reason ipv6 went years
-#: without loading is that these two got copied from the ipv4 template instead of chosen, so the
-#: generator picks them from the family rather than from whatever it wrote last.
-FAMILIES = {
-   'ipv4': {'set_type': 'ipv4_addr', 'selector': 'ip'},
-   'ipv6': {'set_type': 'ipv6_addr', 'selector': 'ip6'},
-}
-
-def wrap_comment(text, indent):
-   """A paragraph as nft comment lines, at a width the rest of the package already uses.
-
-   The argument is the reason this tool exists, and an argument nobody can read because it ran off
-   the side of the file is not much better than one nobody wrote."""
-   words, lines, current = text.split(), [], ''
-   for word in words:
-      if current and len(current) + 1 + len(word) > 92 - len(indent):
-         lines.append(current)
-         current = word
-      else:
-         current = current + ' ' + word if current else word
-   if current: lines.append(current)
-   return '\n'.join(indent + '# ' + line for line in lines)
-
-def limit_rules(name, direction, family, ports, posture, indent):
-   """The limit-bearing rules for one service, in whichever posture was argued for.
-
-   THE VERDICT IS THE POSTURE. `continue` hands the packet to the accept below and instruments it;
-   `over ... drop` refuses it. There is no third choice here and no default - `ch2-5` says refusing
-   is the feature, because a posture nobody chose is exactly what this package spent two arguments
-   recovering from."""
-   if posture == 'none': return []
-   selector = FAMILIES[family]['selector']
-   key = 'saddr' if direction == 'inbound' else 'daddr'
-   rules = []
-   for protocol, port in ports:
-      if posture == 'enforce':
-         rate = '{s} {k} limit rate over 5/minute'.format(s=selector, k=key)
-         count = '{s} {k} ct count over 20'.format(s=selector, k=key)
-         verdict = 'drop'
-      else:
-         rate = '{s} {k} limit rate 5/minute'.format(s=selector, k=key)
-         count = '{s} {k} ct count over 20'.format(s=selector, k=key)
-         verdict = 'continue'
-      rules.append('{i}ct state new {p} dport {n} update @{name}_rate_limit {{ {r} }} {v}'.format(
-         i=indent, p=protocol, n=port, name=name, r=rate, v=verdict))
-      rules.append('{i}ct state new {p} dport {n} add @{name}_connection_limit {{ {c} }} {v}'.format(
-         i=indent, p=protocol, n=port, name=name, c=count, v=verdict))
-   return rules
-
-def render_service_template(name, direction, family, ports, posture, because):
-   """One service's rules file, in the shape the package's own templates use.
-
-   The spacing is the point. These are whitespace-sensitive by hand and nothing validates the
-   layout, so a person adding a service either matches an existing file exactly or produces a
-   ruleset that loads and reads badly - which is why `ch2-1` counts hand-authoring as a defect
-   rather than a chore."""
-   title = ('Outbound ' if direction == 'outbound' else '') + name.upper()
-   set_type = FAMILIES[family]['set_type']
-   out = ['  #############################################################################',
-          '  #',
-          '  ## {title} Rules'.format(title=title),
-          '  #']
-   # The argument goes NEXT TO THE RULE it defends, not in the file header - and in one place, not
-   # both. A header copy would be a second home for the same sentence, and the one that drifts is
-   # always the one further from the code. Where there is no limit there is no posture note, so
-   # the header is the only place left for it.
-   if posture == 'none':
-      out += [wrap_comment(because, '  '), '  #']
-   out += ['  #############################################################################', '']
-   if posture != 'none':
-      for kind, timeout in (('rate_limit', True), ('connection_limit', False)):
-         out += ['  ##',
-                 '  # {n} {k}'.format(n=name.upper(), k=kind.replace('_', ' ')),
-                 '  #',
-                 '  set {n}_{k} {{'.format(n=name, k=kind),
-                 '    type {t}'.format(t=set_type),
-                 '    size 65535']
-         if timeout: out.append('    timeout 900s')
-         out += ['    flags dynamic', '  }', '']
-      out.append('')
-   out.append('  chain ACCEPT_{N} {{'.format(N=name.upper()))
-   if posture != 'none':
-      out += ['    ##',
-              wrap_comment('LIMIT POSTURE: {p} — {w}'.format(p=posture, w=because), '    '),
-              '    #']
-      out += limit_rules(name, direction, family, ports, posture, '    ')
-   for protocol, port in ports:
-      out.append('    ct state new,established {p} dport {n} accept'.format(p=protocol, n=port))
-   out += ['  }', '']
-   return '\n'.join(out)
-
-def insert_after_last(text, pattern, addition, what):
-   """Put a line where the block it belongs to ends, rather than at a marker nobody maintains.
-
-   A generated `# ADD SERVICES HERE` comment would be a second thing to keep true, and the first
-   person to tidy it would silently break this. The blocks are already distinguishable by what
-   their lines DO."""
-   matches = list(re.finditer(pattern, text, re.M))
-   if not matches: sys.exit('Cannot find where to add ' + what + ' - base.rules has changed shape')
-   at = matches[-1].end()
-   return text[:at] + '\n' + addition + text[at:]
-
-def add_service_to_base(base, name, direction, family, ports):
-   """The four edits in base.rules a person adding a service by hand has to remember.
-
-   THE FOURTH IS THE ONE THAT GETS FORGOTTEN. A service needs its include, its jump, its config
-   key - and a reply path in the OPPOSITE table, because both directions default to drop and an
-   inbound service whose replies are not admitted answers nobody. Forgetting it produces a service
-   that looks configured and does not work, which is the failure this whole package is arranged
-   to make loud."""
-   opposite = 'outbound' if direction == 'inbound' else 'inbound'
-   base = insert_after_last(
-      base,
-      r"^\{% if " + direction + r"\.\w+ %\}\{% include '" + family + r"/" + direction + r"/[^']+' %\}\{% endif %\}$",
-      "{{% if {d}.{n} %}}{{% include '{f}/{d}/{n}.rules' %}}{{% endif %}}".format(
-         d=direction, n=name, f=family),
-      'the ' + direction + ' include')
-   for protocol, port in ports:
-      base = insert_after_last(
-         base,
-         r"^\{% if " + direction + r"\.\w+ %\}    \S+ dport \d+ jump ACCEPT_\w+\{% endif %\}$",
-         "{{% if {d}.{n} %}}    {p} dport {t} jump ACCEPT_{N}{{% endif %}}".format(
-            d=direction, n=name, p=protocol, t=port, N=name.upper()),
-         'the ' + direction + ' jump')
-      base = insert_after_last(
-         base,
-         r"^\{% if " + direction + r"\.\w+ %\}    \S+ sport \d+ ct state established accept\{% endif %\}$",
-         "{{% if {d}.{n} %}}    {p} sport {t} ct state established accept{{% endif %}}".format(
-            d=direction, n=name, p=protocol, t=port),
-         "the reply path in the " + opposite + ' table')
-   return base
-
-def add_service(base_directory, name, direction, ports, posture, because):
-   """`afirewall add-service`. Five files, and the person only says what the service is.
-
-   Refuses rather than defaults, throughout. A name that already exists, a posture with no
-   argument, a service with no ports - each is a question with an answer the person has and this
-   tool does not."""
-   if not SERVICE_NAME.match(name):
-      sys.exit('A service name is lower-case letters and digits, starting with a letter: ' + name)
-   if not ports:
-      sys.exit('A service needs at least one --tcp or --udp port')
-   for family in FAMILIES:
-      path = '{b}/templates/{f}/{d}/{n}.rules'.format(b=base_directory, f=family, d=direction, n=name)
-      if os.path.exists(path):
-         sys.exit(path + ' already exists. Edit it, or pick another name - this will not overwrite '
-                         'a template somebody may have argued for.')
-   for family in FAMILIES:
-      path = '{b}/templates/{f}/{d}/{n}.rules'.format(b=base_directory, f=family, d=direction, n=name)
-      with open(path, 'w') as handle:
-         handle.write(render_service_template(name, direction, family, ports, posture, because))
-      base_path = '{b}/templates/{f}/base.rules'.format(b=base_directory, f=family)
-      with open(base_path) as handle:
-         base = handle.read()
-      with open(base_path, 'w') as handle:
-         handle.write(add_service_to_base(base, name, direction, family, ports))
-      print('Wrote ' + path + ' and updated ' + base_path)
-   conf_path = base_directory + '/afirewall.conf'
-   with open(conf_path) as handle:
-      conf = handle.read()
-   if not conf.endswith('\n'): conf += '\n'
-   with open(conf_path, 'w') as handle:
-      handle.write(conf + '{d}.{n}: disable\n'.format(d=direction, n=name))
-   print('Added {d}.{n} to {c}, disabled. Enable it when the service is there.'.format(
-      d=direction, n=name, c=conf_path))
+   return get_external_interface(destination, Family.IPV6)
 
 def get_parser():
    parser = argparse.ArgumentParser(description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux')
@@ -345,8 +258,23 @@ def get_parser():
    parser.add_argument('--because', help='add-service: WHY that posture. Recorded beside the rule, and required')
    parser.add_argument('-nft', help='full path to nft - default /usr/sbin/nft', default='/usr/sbin/nft')
    parser.add_argument('-ip', help='full path to ip - default /usr/bin/ip', default='/usr/bin/ip')
-   parser.add_argument('-ipv4dest', help='destination used to find the external ipv4 address and device - default 8.8.8.8', default='8.8.8.8')
-   parser.add_argument('-ipv6dest', help='destination used to find the external ipv6 address and device - default 2001:4860:4860:0:0:0:0:8888', default='2001:4860:4860:0:0:0:0:8888')
+   # WHY A DOCUMENTATION ADDRESS AND NOT A REAL ONE. This is only ever handed to `ip route get`,
+   # which is a routing table lookup and sends no packet - so the usual objection to a public
+   # resolver's address, that it leaks or that it depends on somebody else being up, does not
+   # apply. What does apply is subtler: a host may carry a SPECIFIC route for a real service.
+   # Split-tunnel VPNs commonly force DNS down the tunnel, and a policy route for 8.8.8.8 makes
+   # discovery return the tunnel's device and address. The SPOOFING chain is then qualified by the
+   # wrong interface and the spoof list subtracted against the wrong network, silently.
+   #
+   # 192.0.2.0/24 (RFC 5737, TEST-NET-1) and 2001:db8::/32 (RFC 3849) name no service, so nothing
+   # routes them specially for a service's sake and the lookup follows the default route - which is
+   # what discovery is actually asking about. A third party's address also has no business being a
+   # default in a package other people install.
+   #
+   # The residual risk is a host that installs reject routes for bogon ranges; that is what these
+   # two options are for.
+   parser.add_argument('-ipv4dest', help='address used to find the external ipv4 device and source address, by routing table lookup - no packet is sent - default 192.0.2.1', default='192.0.2.1')
+   parser.add_argument('-ipv6dest', help='address used to find the external ipv6 device and source address, by routing table lookup - no packet is sent - default 2001:db8::1', default='2001:db8::1')
    parser.add_argument('-b', '--basedir', help='path to the base configuration directory - default /etc/afirewall', default='/etc/afirewall')
    return parser
 
@@ -461,19 +389,27 @@ def disable_services_missing_their_users(base_directory, config):
                break
    return config
 
-def get_interfaces():
-   interfaces = []
-   interface = get_external_ipv4_interface(args.ipv4dest)
-   if interface != None:
-      interfaces.append(interface)
-   else:
-      print('Warning: no IPv4 interface found. There was no valid route to ' + args.ipv4dest)
-   interface = get_external_ipv6_interface(args.ipv6dest)
-   if interface != None:
-      interfaces.append(interface)
-   else:
-      print('Warning: no IPv6 interface found. There was no valid route to ' + args.ipv6dest)
+def get_interfaces(base_directory):
+   """Which interfaces the rules are generated against.
 
+   STATED FIRST, DISCOVERED OTHERWISE. Trust is a policy statement about a network and the routing
+   table is not a trust database: the default route says where packets go, not which network is
+   hostile. Those agree on a single-NIC host and stop agreeing the moment a full-tunnel VPN moves
+   the default route onto an overlay - where a private source address is entirely legitimate, so
+   the anti-spoofing rules would be applied to the one interface they must not be."""
+   stated = get_stated_external_device(base_directory)
+   interfaces = []
+   for family, destination in ((Family.IPV4, args.ipv4dest), (Family.IPV6, args.ipv6dest)):
+      if stated is not None:
+         interface = get_external_interface_by_name(stated, family)
+         absent = stated + ' has no ' + family.name + ' address'
+      else:
+         interface = get_external_interface(destination, family)
+         absent = 'there was no valid route to ' + destination
+      if interface is not None:
+         interfaces.append(interface)
+      else:
+         warn('no ' + family.name + ' interface found: ' + absent)
    return interfaces
 
 if __name__ == "__main__":
@@ -489,7 +425,7 @@ if __name__ == "__main__":
    if os.geteuid() != 0: sys.exit('Root permissions required.')
 
    config = disable_services_missing_their_users(args.basedir, get_configuration())
-   interfaces = get_interfaces()
+   interfaces = get_interfaces(args.basedir)
 
    match args.command:
       case 'start' | 'restart' | 'reload' | 'force-reload' | 'save':

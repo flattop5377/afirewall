@@ -57,10 +57,15 @@ the full path to nft, default /usr/sbin/nft
 the full path to ip, default /usr/bin/ip
 
 .OP "-ipv4dest"
-destination used to find the external ipv4 address and device, default 8.8.8.8
+address used to find the external IPv4 device and source address, default 192.0.2.1.  This is a
+routing table lookup and NO PACKET IS SENT.  The default is an RFC 5737 documentation address
+because it names no service: a host that carries a specific route for a real one - a split tunnel
+forcing DNS down a VPN, say - would otherwise have the firewall discover the tunnel's interface and
+qualify its anti-spoofing rules against it.  Override where the default route is not the answer.
 
 .OP "-ipv6dest"
-destination used to find the external ipv6 address and device, default 2001:4860:4860:0:0:0:0:8888
+address used to find the external IPv6 device and source address, default 2001:db8::1, an RFC 3849
+documentation address, for the reason above
 
 .OP "-b, --basedir"
 path to the configuration file, templates, lists, and output of nft, default /etc/afirewall

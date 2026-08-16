@@ -45,11 +45,33 @@ def tree(ref):
     return set(out.splitlines())
 
 
-@pytest.mark.proves("ch5-1", depth="unit")
-def test_a_release_can_be_cut_by_somebody_who_has_not_done_it_before():
-    unwatched("ch5-1", "somebody following the chapter and reaching a published package without "
-                       "asking a question — the measure is a person's experience of the process "
-                       "and cannot be taken from inside the repository")
+@pytest.mark.proves("ch5-1", depth="structural")
+def test_the_release_sequence_is_in_the_repository():
+    """A sequence somebody has to remember is a sequence somebody gets wrong at the version they
+    most need to reproduce. This repository has already lost a manpage, a set of version bumps and
+    a `save` command onto a branch nobody merges from, each of them a step somebody skipped.
+
+    So the process is a file. What the drill holds is not that the file is good — it is that every
+    step the chapter claims is actually in it, so the two cannot drift apart while both look
+    maintained.
+    """
+    script = ROOT / "tools" / "release.sh"
+    assert script.is_file(), (
+        "there is no tools/release.sh, so the release sequence exists only in whatever the last "
+        "person to cut one remembers")
+    text = script.read_text()
+    for phase, needle in (
+            ("merge master into upstream/latest", "merge --no-edit master"),
+            ("tag the upstream release (ch5-4)", "tag -a \"upstream/latest/"),
+            ("merge upstream into the packaging layer", "merge --no-edit upstream/latest"),
+            ("a Debian revision on the version (ch5-5)", "$VERSION-1"),
+            ("commit the pristine-tar delta (ch5-7)", "--git-pristine-tar-commit"),
+            ("tag the packaging that shipped (ch5-4)", "--git-tag"),
+            ("publish to the archive", "includedeb")):
+        assert needle in text, f"tools/release.sh has no step that would {phase}"
+    assert "--publish" in text, (
+        "the script publishes unconditionally, so there is no way to look at what a release "
+        "produced before it is public")
 
 
 @pytest.mark.proves("ch5-2", depth="structural")
@@ -272,8 +294,33 @@ def test_what_shipped_can_be_rebuilt():
         f"be reported against cannot be rebuilt. Deltas present: {deltas}")
 
 
-@pytest.mark.proves("ch5-8", depth="integration")
-def test_a_release_needs_no_decisions():
-    unwatched("ch5-8", "a release cut end to end with no conflict and no question — which cannot "
-                       "be observed until ch5-U2 is resolved, because a trial merge of master into "
-                       "upstream/latest stops on three files today")
+@pytest.mark.proves("ch5-8", depth="structural")
+def test_the_newest_release_left_a_complete_set_of_artifacts():
+    """What a release that ran cleanly leaves behind: a version, tagged in both places, with a
+    tarball anybody can regenerate. A missing one is a step that did not happen, and the step that
+    does not happen is always the one nobody notices until they need it.
+
+    This reads the repository rather than the archive on purpose. Whether a package is fetchable
+    depends on a CDN and a network, and a drill that goes red because raw.githubusercontent is
+    still serving a cached index has taught nobody anything about the release.
+    """
+    have("debian/latest")
+    version, _ = git("show", "debian/latest:debian/changelog")
+    top = version.splitlines()[0]
+    full = top.split("(")[1].split(")")[0]
+    upstream = full.rsplit("-", 1)[0]
+
+    tags, _ = git("tag")
+    tags = set(tags.splitlines())
+    assert f"upstream/latest/{upstream}" in tags, (
+        f"debian/changelog is at {full} and there is no upstream/latest/{upstream} tag, so the "
+        "source that shipped is not recorded")
+    assert f"debian/latest-{full}" in tags, (
+        f"debian/changelog is at {full} and there is no debian/latest-{full} tag, so the packaging "
+        "that shipped is not recorded")
+
+    have("pristine-tar")
+    deltas, _ = git("ls-tree", "--name-only", "pristine-tar")
+    assert any(upstream in d and d.endswith(".delta") for d in deltas.splitlines()), (
+        f"no pristine-tar delta for {upstream}, so the tarball that shipped cannot be regenerated "
+        "and a bug reported against this version gets guessed at rather than built")
