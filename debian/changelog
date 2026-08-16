@@ -1,3 +1,38 @@
+afirewall (20260816.0.0-1) unstable; urgency=medium
+
+  * The IPv6 ruleset failed to load entirely on any host with inbound.tcp8000
+    enabled: the template matched on `ip saddr` inside an ip6 table, and nft
+    refuses a whole table containing one unloadable rule. Such a host came up
+    with no IPv6 firewall while its IPv4 ruleset loaded and looked correct.
+  * New command `afirewall add-service`, which writes a rules template for a
+    service the package does not ship - both address families, the config key,
+    the include, the jump, and the reply path in the opposite table. It asks for
+    the limit's posture and the reason for it, and refuses without them.
+  * New templates: postgres, and udp51821 for a second WireGuard instance on a
+    non-default port.
+  * The default configuration is now also installed to
+    /usr/share/afirewall/afirewall.conf, so a configuration manager can restore
+    a known state at the start of a run and let each role add what it needs.
+    /etc/afirewall/afirewall.conf remains the conffile and is unchanged.
+  * Every rule carrying a rate or connection limit now records, beside it,
+    whether that limit refuses excess or only counts it, and why. Inbound
+    bitcoin changes from counting to refusing, to agree with the argument its
+    own note makes and with the tor relay rules beside it.
+  * ICMP: path MTU discovery is carried above the rate limit in IPv4, as it
+    already was in IPv6, so a black-holed connection is not competing with
+    diagnostics for a budget. Source quench is no longer accepted (RFC 6633
+    deprecated it), nor are the timestamp, information and address-mask
+    requests.
+  * Comments describing one deployment's own network have been removed from the
+    templates. The arguments they carried are unchanged; they are now made from
+    the shape of the service rather than from one site's use of it.
+  * The package is no longer Debian-native, so packaging fixes can be released
+    without inventing an upstream version. It now declares nftables (>= 1.0.2),
+    which is the oldest version measured to parse a full generated ruleset;
+    0.9.8 and earlier reject it.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Sun, 16 Aug 2026 09:29:14 -0600
+
 afirewall (20260815.0.0) unstable; urgency=medium
 
   [ Flattop ]
