@@ -73,16 +73,21 @@ table ip a-firewall-inbound-ipv4 {
 {% if inbound.postgres %}    tcp dport 5432 jump ACCEPT_POSTGRES{% endif %}
 {% if inbound.udp51821 %}    udp dport 51821 jump ACCEPT_UDP51821{% endif %}
 
-    # NO `ct state established` HERE, AND THAT IS THE WHOLE POINT. A DHCP client sends to a
-    # multicast or broadcast address and the server answers from its own unicast address, so the
-    # reply is not the return direction of the request as far as conntrack is concerned - the
-    # tuples do not match and the reply arrives as INVALID or NEW, never ESTABLISHED. A rule that
-    # asks for ESTABLISHED therefore never matches, the reply dies on the chain policy without
-    # touching a counter, and the lease simply runs out.
+    # NO `ct state established` HERE, BECAUSE A DHCP REPLY IS NOT RELIABLY A CONNTRACK REPLY.
+    # A client that broadcasts or multicasts its request is answered from the server's own unicast
+    # address, so the tuples do not match, the reply arrives INVALID or NEW, and a rule asking for
+    # ESTABLISHED never fires. The reply then dies on the chain policy without touching a counter.
     #
-    # Measured on a host with a ten-minute DHCPv6 lease: firewall up, the lease counted 600 down to
-    # 25 with no renewal; firewall stopped, it was back at 578 within seconds. Matching the port
-    # pair is what a firewall can actually say about a DHCP reply.
+    # DHCP IS ALSO THE ONE SERVICE WHOSE INBOUND HALF IS A REAL RULE. Everywhere else this line is
+    # a conntrack reply path; here it has to be an accept in its own right, and one flag still opens
+    # both - splitting it would make enabling half of it a way to lose an address quietly.
+    #
+    # MEASURED, AND THE TWO FAMILIES DISAGREED. IPv6: firewall up, a ten-minute lease counted 600
+    # down to 25 and never renewed, and a forced reconfigure lost the address outright. IPv4:
+    # renewed AND fully re-acquired through the same firewall, because networkd unicasts to a server
+    # it already knows and the tuple matches. So IPv4 was never broken - it works by the CLIENT'S
+    # choice of unicast rather than by anything this rule guarantees, and a firewall that depends on
+    # which destination a client picks works until the client changes.
 {% if outbound.dhcp %}    udp sport 67 udp dport 68 accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
 {% if outbound.http %}    tcp sport 80 ct state established accept{% endif %}
