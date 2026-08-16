@@ -1,3 +1,42 @@
+afirewall (20260816.2.0-1) unstable; urgency=medium
+
+  * A host with IPv6 never got an IPv6 ruleset. Interface discovery matched the
+    human-readable output of `ip`, and the pattern for the IPv6 device name was
+    the one for an IPv6 address - so it matched no normal interface, discovery
+    returned nothing, and afirewall warned and carried on with IPv4 only.
+    Discovery now uses `ip -json`, where that class of fault is not expressible.
+  * DHCPv6 used the IPv4 port. The template said `udp dport 67`; DHCPv6 is 547.
+  * DHCP replies are no longer matched on connection tracking state. A client
+    that broadcasts or multicasts its request is answered from the server's own
+    unicast address, so the reply is not the return direction of the request and
+    a rule asking for an established connection never matches it. The reply then
+    died on the chain policy and the lease ran out with nothing to say why.
+    Both families now match the port pair.
+  * Templates and lists install to /usr/share/afirewall and are replaced on
+    upgrade without asking. A file of the same name under /etc/afirewall still
+    takes precedence, so an override survives, but it is no longer the thing
+    deciding what future upgrades may do. This takes the package from 73
+    conffiles to one; the others are removed on upgrade, and any you had edited
+    is kept beside them as .dpkg-bak rather than discarded.
+  * The generated ruleset is written to /run/afirewall instead of the
+    configuration directory. It is rebuilt on every start, so a location that
+    empties on boot also makes it impossible to load one that no longer matches
+    the configuration.
+  * The external interface can be stated in /etc/afirewall/interfaces.conf as
+    `external: <device>`, for hosts where the interface carrying the default
+    route is not the one facing the untrusted network - a full-tunnel VPN, most
+    obviously. Saying nothing keeps the previous behaviour of discovering it, so
+    a host with one interface needs no configuration. A named device the host
+    does not have stops the run rather than falling back.
+  * Interface discovery asks about a documentation address (RFC 5737, RFC 3849)
+    rather than a public resolver. No packet is sent either way - this is a
+    routing table lookup - but a host may carry a specific route for a real
+    service, and a documentation address names no service.
+  * Traffic not addressed to this host is dropped, in both families, with a
+    named counter. This needs no interface to be identified.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Sun, 16 Aug 2026 11:41:20 -0600
+
 afirewall (20260816.0.0-2) unstable; urgency=medium
 
   * Depend on iproute2. afirewall runs `ip route get` to discover the external
