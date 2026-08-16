@@ -494,3 +494,30 @@ class TestFamilySpecificPorts(unittest.TestCase):
         """The specific numbers, because 'differs from IPv4' would also be satisfied by a typo."""
         self.assertEqual(['547'], self.ports('templates/ipv6/outbound/dhcp.rules'))
         self.assertEqual(['67'], self.ports('templates/ipv4/outbound/dhcp.rules'))
+
+    def testDhcpRepliesDoNotDependOnConntrack(self):
+        """The reply to a DHCP request is not the return direction of it.
+
+        A client sends to a multicast or broadcast address and the server answers from its own
+        unicast one, so conntrack sees no matching tuple and the reply arrives INVALID or NEW -
+        never ESTABLISHED. A rule asking for ESTABLISHED never matches, the reply dies on the chain
+        policy without touching a counter, and the lease runs out with nothing to show for it.
+
+        Measured on a host with a ten-minute DHCPv6 lease: with the firewall up it counted 600 down
+        to 25 and never renewed; with it stopped the lease was back at 578 within seconds. This
+        applies to both families - IPv4 had the identical rule and would have failed the same way
+        on every DHCP host, which is every host in the hosts it was written for.
+        """
+        for family, server, client in (('ipv4', '67', '68'), ('ipv6', '547', '546')):
+            with self.subTest(family=family):
+                rules = [l.strip() for l in open('templates/' + family + '/base.rules')
+                         if 'outbound.dhcp' in l and 'sport ' + server in l]
+                self.assertTrue(rules, family + ' has no inbound DHCP reply rule at all')
+                for rule in rules:
+                    self.assertNotIn(
+                        'ct state', rule,
+                        family + ' gates the DHCP reply on conntrack state: ' + rule)
+                    self.assertIn(
+                        'dport ' + client, rule,
+                        family + ' does not match the DHCP client port, so the rule is broader '
+                        'than it needs to be: ' + rule)
