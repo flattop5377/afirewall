@@ -65,3 +65,13 @@ mutation = false
 "ch5-6" = "structural"
 "ch5-7" = "structural"
 "ch5-8" = "structural"
+# CHAPTER 6 IS SHAPE: whether a stated interface can be read at all, from where, whether silence
+# still works, and whether anything refuses a name that is not there. All settled by reading, and
+# all currently reading as absent. What is NOT settled is a host actually filtering the interface
+# its operator meant (ch6-U2), which needs a host with a tunnel and a moved default route.
+"ch6-2" = "structural"
+"ch6-3" = "structural"
+"ch6-4" = "structural"
+"ch6-5" = "structural"
+"ch6-6" = "structural"
+"ch6-7" = "structural"
