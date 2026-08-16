@@ -1,4 +1,4 @@
-.TH afirewall 8 "16 Aug 2026" "20260816.0.0" "afirewall manual"
+.TH afirewall 8 "16 Aug 2026" "20260816.2.0" "afirewall manual"
 
 .SH NAME
 afirewall \- A pure NetFilter Firewall wrapper for Linux
@@ -17,10 +17,16 @@ afirewall uses netfilter to deny by default all inbound and outbound network tra
 The firewall's configuration file defaults to /etc/afirewall/afirewall.conf where individual services can be enabled.  The configuration file uses a syntax that is easy to read for human and also update / parse with Ansible.
 
 .PP
-Templates, for adding services that don't have a configuration shipped with the package, are in basedir/templates.  Distribution templates are in /usr/share/afirewall/templates.  Please suggest services you'd like added to the package by making a new issue on github.
+Templates and lists are shipped by the package in \fI/usr/share/afirewall/templates\fR and
+\fI/usr/share/afirewall/lists\fR, and are replaced on upgrade without asking.  A file of the same
+name under \fI/etc/afirewall\fR takes precedence, so an override survives an upgrade while
+everything you did not override moves forward with the package.  Please suggest services you would
+like added by opening an issue.
 
 .PP
-Lists, such as spoofed networks, are in /etc/afirewall/lists.  Distribution lists are in /usr/share/afirewall/lists.
+The generated ruleset is written to \fI/run/afirewall\fR.  It is derived from the configuration and
+rebuilt on every start, so it is not configuration and is not preserved across a reboot - which is
+also what makes it impossible to load a ruleset that no longer matches the configuration.
 
 .SH OPTIONS
 .OP "start, restart, reload, force-reload, save"

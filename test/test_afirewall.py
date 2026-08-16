@@ -444,3 +444,53 @@ class TestInterfaceDiscovery(unittest.TestCase):
                       'the IPv4 discovery target is not an RFC 5737 documentation address')
         self.assertIn(ip_address(defaults['ipv6dest']), ip_network('2001:db8::/32'),
                       'the IPv6 discovery target is not an RFC 3849 documentation address')
+
+
+class TestFamilySpecificPorts(unittest.TestCase):
+    """Ports that are not the same in both families.
+
+    A REGRESSION TEST FOR A COPY-PASTE THAT COST A HOST ITS ADDRESS. Nearly every service uses the
+    same port in both families, so an IPv6 template is usually a correct copy of its IPv4 sibling
+    with the selectors changed. DHCP is the exception: IPv4 uses 67/68 and DHCPv6 uses 547/546.
+    templates/ipv6/outbound/dhcp.rules was a byte-for-byte copy, so on a host with a DHCPv6 lease
+    the renewal was refused by the outbound policy drop and the address lapsed when the lease ran
+    out. Nothing failed loudly - the host simply stopped having IPv6.
+
+    Stated as a rule rather than one assertion about DHCP: where the families agree, the ports must
+    match, and where they cannot agree, they must not.
+    """
+
+    SAME_IN_BOTH = None          # every service not listed below
+    MUST_DIFFER = {'dhcp'}       # 67/68 against 547/546
+
+    def ports(self, path):
+        return sorted(set(re.findall(r'\b[ds]port (\d+)', open(path).read())))
+
+    def testPortsMatchAcrossFamiliesExceptWhereTheyCannot(self):
+        for direction in ('inbound', 'outbound'):
+            base = 'templates/ipv4/' + direction
+            if not os.path.isdir(base):
+                continue
+            for name in sorted(os.listdir(base)):
+                six = 'templates/ipv6/' + direction + '/' + name
+                if not os.path.exists(six):
+                    continue
+                service = name.replace('.rules', '')
+                four_ports, six_ports = self.ports(base + '/' + name), self.ports(six)
+                with self.subTest(service=direction + '/' + service):
+                    if service in self.MUST_DIFFER:
+                        self.assertNotEqual(
+                            four_ports, six_ports,
+                            service + ' uses the same ports in both families, and it must not - '
+                            'IPv4 DHCP is 67/68 and DHCPv6 is 547/546, so an identical copy leaves '
+                            'a host unable to renew its lease')
+                    else:
+                        self.assertEqual(
+                            four_ports, six_ports,
+                            service + ' uses different ports in each family, which is either a '
+                            'typo or a service that belongs in MUST_DIFFER with a reason')
+
+    def testDhcpv6UsesTheDhcpv6Ports(self):
+        """The specific numbers, because 'differs from IPv4' would also be satisfied by a typo."""
+        self.assertEqual(['547'], self.ports('templates/ipv6/outbound/dhcp.rules'))
+        self.assertEqual(['67'], self.ports('templates/ipv4/outbound/dhcp.rules'))
