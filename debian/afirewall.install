@@ -1,5 +1,13 @@
 #! /usr/bin/dh-exec
 afirewall.conf etc/afirewall
+# THE SAME FILE AGAIN, WHERE IT CANNOT BE EDITED. /etc/afirewall/afirewall.conf is a conffile and
+# is meant to be changed - ansible composes a host's ruleset by enabling flags in it. That leaves
+# nothing on the host stating what the defaults WERE, so a configuration manager that wants the
+# end state to follow from what it just did has nothing to start from and can only accumulate.
+#
+# It is not "everything off": the defaults enable inbound.ssh and the outbound half a host needs to
+# be administered, resolve, and update. A restore that guessed at that would close ssh.
+afirewall.conf usr/share/afirewall
 afirewall/afirewall.py => /usr/sbin/afirewall
 lists etc/afirewall
 templates etc/afirewall
