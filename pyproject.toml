@@ -1,10 +1,15 @@
+# THE DEBIAN PACKAGE IS NOT BUILT FROM THIS FILE, measured 2026-08-16.
+# `dh $@ --with python3` does not select pybuild, no wheel is produced, and the .deb has no
+# /usr/lib/python3/dist-packages. What ships is afirewall/afirewall.py copied straight to
+# /usr/sbin/afirewall by debian/afirewall.install. So this describes the project for anything that
+# reads Python metadata, and debian/changelog - not the line below - is the authority on version.
 [build-system]
-requires = ["hatchling", "hatch-argparse-manpage"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "afirewall"
-version = "20250429.0.0"
+version = "20260815.0.0"
 readme = "DESCRIPTION.txt"
 license = {file = "LICENSE-SHORT.txt"}
 requires-python = ">=3.9"
@@ -12,14 +17,14 @@ dependencies = [
   "jinja2"
 ]
 authors = [
-  {name = "Flattop5377", email="flattop5377@proton.me"},
+  {name = "Flattop5377", email="Flattop5377@proton.me"},
 ]
 maintainers = [
-  {name = "Flattop5377", email="flattop5377@proton.me"},
+  {name = "Flattop5377", email="Flattop5377@proton.me"},
 ]
 description = "A pure Netfilter Firewall configured for Linux"
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: System Administrators",
   "License :: OSI Approved :: Apache Software License",
@@ -32,5 +37,8 @@ classifiers = [
 [project.urls]
 Homepage = "https://flattop5377.github.io/afirewall/"
 
-[project.scripts]
-afirewall = "afirewall:main"
+# NO [project.scripts]. It said `afirewall = "afirewall:main"` and there is no main(): afirewall.py
+# ends in `if __name__ == "__main__":` and afirewall/__init__.py is an empty file, so the entry
+# point resolved to nothing. It never failed visibly because nothing ever calls it - the command is
+# installed by debian/afirewall.install copying afirewall/afirewall.py to /usr/sbin/afirewall, and
+# the built .deb contains no dist-packages at all.
