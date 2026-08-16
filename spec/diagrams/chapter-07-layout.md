@@ -82,12 +82,13 @@ new base ruleset (`ch7-4`), and the manual is corrected to describe what is actu
 
 ## Open unknowns
 
-- **ch7-U1 — the migration for hosts that already have the 73.** A host installed today has every
-  template as a conffile. Moving them to `/usr/share` means dpkg must be told to remove conffiles it
-  no longer ships, which is `dpkg-maintscript-helper rm_conffile` in a maintainer script, one line
-  per file. What is undecided is whether an *edited* one should be preserved into `/etc` as a real
-  override or removed with the rest — preserving it is kinder and re-creates the skew hazard for
-  that host, removing it is safer and silently discards somebody's change. Anchored to `ch7-3`.
+- **ch7-U1 — CLOSED by what `rm_conffile` already does.** The question was whether an *edited*
+  template should be preserved into `/etc` as a real override or removed with the rest — kindness
+  against safety, and it turned out not to be a choice anybody has to make.
+  `dpkg-maintscript-helper rm_conffile` removes an unmodified file silently and moves a modified one
+  aside to `.dpkg-bak` rather than keeping it active. So nobody's change is discarded, and nobody's
+  change goes on shadowing the shipped copy on every future upgrade. The list is generated from the
+  tree rather than typed, because 72 hand-written paths is a list that goes stale.
 
 - **ch7-U2 — nothing has observed an upgrade doing any of this.** The claims are read from
   `debian/afirewall.install`, from `dpkg-query` on one host, and from what debhelper does with

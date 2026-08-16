@@ -18,6 +18,27 @@ from undrilled import unwatched
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+def constant(name):
+    """The VALUE of a module-level path constant, read out of the source.
+
+    Two attempts got here. The first regexed the source for `/usr/share/afirewall` and `/run/` and
+    failed against correct code, because the paths had been lifted into named constants — which is
+    what one wants of the code and what a textual check for a literal cannot see.
+
+    The second imported the module to read them, which worked alone and broke the suite: it put
+    `afirewall/` on sys.path so `import afirewall` found the MODULE, while test_afirewall.py does
+    `from afirewall import afirewall` and needs the PACKAGE. Whichever ran first won. A test whose
+    answer depends on what else you ran is worse than one that is simply wrong.
+
+    So: read the assignment. It is inspection, it is deterministic, and it checks the value rather
+    than the spelling — which was the whole point of moving off the first version.
+    """
+    source = (ROOT / "afirewall" / "afirewall.py").read_text()
+    found = re.search(rf"^{name}\s*=\s*'(?P<value>[^']+)'", source, re.M)
+    assert found, f"{name} is not defined as a module-level string constant"
+    return found.group("value")
+
+
 def git(*args):
     done = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, encoding="UTF-8")
     return done.stdout, done.returncode
@@ -83,14 +104,15 @@ def test_the_package_ships_defaults_and_etc_overrides_them():
         assert re.search(rf"^{what}\s+usr/share/afirewall\s*$", install, re.M), (
             f"{what} is not installed to /usr/share/afirewall, so there is no shipped copy for an "
             "/etc override to override, and the manpage's description of the layout stays fiction")
+    assert constant("SHIPPED") == "/usr/share/afirewall", (
+        f"the package reads its own copies from {constant('SHIPPED')!r}, which is not where the "
+        "install file puts them")
     source = (ROOT / "afirewall" / "afirewall.py").read_text()
     loader = re.search(r"FileSystemLoader\(\[(?P<paths>[^\]]*)\]", source)
     assert loader, "the template loader no longer takes a list of directories"
     paths = loader.group("paths")
-    assert "usr/share/afirewall" in paths, (
-        "the loader does not look in /usr/share/afirewall, so a host with no override finds no "
-        f"templates at all. Searches: {paths.strip()}")
-    assert paths.index("base_directory") < paths.index("usr/share/afirewall"), (
+    assert "SHIPPED" in paths, f"the loader does not look at the shipped copies: {paths.strip()}"
+    assert paths.index("base_directory") < paths.index("SHIPPED"), (
         "the shipped templates are searched before the base directory, so an /etc override would "
         "never win — which is the wrong way round")
 
@@ -100,15 +122,16 @@ def test_generated_rulesets_are_not_written_into_the_configuration():
     """ipv4.nft is derived from the config and rebuilt on every start. In /etc it is unowned by
     dpkg and churns under anything watching configuration; in a location that empties on boot it
     also cannot be loaded stale."""
+    where = constant("GENERATED")
+    assert not where.startswith("/etc"), (
+        f"the generated ruleset is written to {where}, which puts machine-generated output in the "
+        "configuration directory, unowned by dpkg and churning beneath anything watching /etc")
+    assert where.startswith("/run/") or where.startswith("/var/lib/"), (
+        f"the generated ruleset goes to {where}, which is neither /run nor /var/lib")
     source = (ROOT / "afirewall" / "afirewall.py").read_text()
     written = re.search(r"output_name\s*=\s*(?P<expr>.+)", source)
-    assert written, "cannot find where the generated ruleset is written"
-    expr = written.group("expr")
-    assert "base_directory" not in expr, (
-        f"the generated ruleset is written into the base directory: {expr.strip()}. That puts "
-        "machine-generated output in /etc, unowned by dpkg.")
-    assert "/run/" in expr or "/var/lib/" in expr, (
-        f"the generated ruleset goes somewhere that is neither /run nor /var/lib: {expr.strip()}")
+    assert written and "base_directory" not in written.group("expr"), (
+        "the generated ruleset is still built from the base directory")
 
 
 @pytest.mark.proves("ch7-6", depth="structural")
