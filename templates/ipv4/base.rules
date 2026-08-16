@@ -111,6 +111,21 @@ table ip a-firewall-inbound-ipv4 {
   #
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+  ##
+  #
+  # LIMIT POSTURE: enforce — and it enforces by FALLING THROUGH, which no other rule here
+  # does.
+  #
+  # The limit below is a match condition rather than a counted-and-ignored one: over
+  # 10/second the rule stops matching, nothing beneath it accepts that packet, and the chain
+  # policy drops it. So these rules refuse excess without the word `drop` appearing
+  # anywhere, and a reader who has learned the `continue` form beside them will read this
+  # backwards.
+  #
+  # Enforced because ICMP carries no service: the collateral of a wrong drop is diagnostics
+  # rather than a counterparty, so nothing here fails the replaceability test the service
+  # templates apply. What it does cost is recorded as ch1-U3.
+  #
   chain VALID_ICMP {
     icmp type echo-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip saddr limit rate 10/second } accept
@@ -422,6 +437,15 @@ table ip a-firewall-outbound-ipv4 {
   #
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+  ##
+  #
+  # LIMIT POSTURE: enforce — keyed on `ip daddr`, which is ours to choose, and enforcing by
+  # FALLING THROUGH rather than by saying `drop`.
+  #
+  # Over 10/second the rule stops matching, nothing beneath it accepts, and the chain policy
+  # drops. This is the first branch of ch1-3: the address the limit is keyed on is the one
+  # this host picked, so there is no forged source to aim it with. Enforced freely.
+  #
   chain VALID_ICMP {
     icmp type echo-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip daddr limit rate 10/second } accept

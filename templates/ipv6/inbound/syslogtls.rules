@@ -25,6 +25,15 @@
 
 
   chain ACCEPT_SYSLOGTLS {
+    ##
+    # LIMIT POSTURE: instrument — this port carries the evidence.
+    #
+    # The legitimate rate genuinely is bounded: a shipper opens one connection and holds it,
+    # so 5/minute is orders of magnitude clear of anything real, and enforcing is available.
+    # It is still the wrong answer. A limit that drops can be aimed at exactly the host an
+    # attacker is working on, and silencing that host's logs is the point of the exercise. A
+    # rule that lets a stranger suppress an audit trail on demand is worse than no rule.
+    #
     ct state new tcp dport 6514 update @syslogtls_rate_limit { ip6 saddr limit rate 5/minute } continue
     ct state new tcp dport 6514 add @syslogtls_connection_limit { ip6 saddr ct count over 20 } continue
     ct state new,established tcp dport 6514 accept

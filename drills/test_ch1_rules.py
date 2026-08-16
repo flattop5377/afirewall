@@ -21,25 +21,54 @@ from undrilled import unwatched
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# A template carries a limit if it rate-limits or counts connections. Those are the rules that have
-# a posture to argue; a plain `accept` has nothing to defend beyond the flag that selected it.
+# A rule carries a limit if it rate-limits or counts connections. Those are the rules that have a
+# posture to argue; a plain `accept` has nothing to defend beyond the flag that selected it.
 _HAS_LIMIT = re.compile(r"limit rate|ct count")
-
-# The two postures, read from the rule rather than from prose: `continue` hands the packet on to
-# the accept below, `over ... drop` refuses it.
-_INSTRUMENTS = re.compile(r"\bcontinue\b")
-_ENFORCES = re.compile(r"over\s+\d+\s*(\}\s*)?drop|over\s+\S+\s+drop")
 
 _POSTURE = re.compile(r"#\s*LIMIT POSTURE:\s*(?P<why>.+)", re.I)
 
 
 def templates():
+    """Every file that generates rules, INCLUDING base.rules.
+
+    base.rules was outside this sweep in the first cut and that was wrong twice over: it carries
+    thirty limit-bearing rules, and it is the only file in the package whose limits enforce by
+    falling through rather than by saying `drop` — which is precisely the form a reader who has
+    learned the `continue` idiom beside it will misread.
+    """
     for family in ("ipv4", "ipv6"):
+        base = ROOT / "templates" / family / "base.rules"
+        if base.is_file():
+            yield f"{family}/base.rules", base.read_text()
         for side in ("inbound", "outbound"):
             directory = ROOT / "templates" / family / side
             if directory.is_dir():
                 for rules in sorted(directory.glob("*.rules")):
                     yield f"{family}/{side}/{rules.name}", rules.read_text()
+
+
+def limit_verdicts(text):
+    """What each limit-bearing rule actually does with a packet that exceeds it.
+
+    READ FROM THE RULE'S OWN VERDICT, which is its last word, because nft gives a limit three
+    endings and only two of them are obvious:
+
+      `... } continue`  the packet falls to the unconditional accept below — INSTRUMENT
+      `... over N } drop`  the packet is refused in as many words — ENFORCE
+      `... limit rate N } accept`  the limit is a MATCH: over the rate the rule stops matching,
+                                   nothing below accepts, and the chain policy drops — ENFORCE
+
+    The first version of this recognised only the explicit `drop` and would have called every
+    ICMP rule in base.rules an unfulfilled claim of enforcement. A drill that cannot see a third
+    form reports the file rather than the fault.
+    """
+    verdicts = set()
+    for line in text.splitlines():
+        rule = line.strip()
+        if rule.startswith("#") or not _HAS_LIMIT.search(rule):
+            continue
+        verdicts.add("instrument" if rule.split()[-1] == "continue" else "enforce")
+    return verdicts
 
 
 @pytest.mark.proves("ch1-1", depth="structural")
@@ -72,8 +101,11 @@ def test_the_config_stays_a_plain_list_of_flags():
 
 @pytest.mark.proves("ch1-3", depth="unit")
 def test_spoofability_is_asked_of_the_service():
-    unwatched("ch1-3", "the question asked of each service and its transport together — which is "
-                       "ch1-U1, a pass over every template rather than a reading a test can take")
+    unwatched("ch1-3", "a reader checking each recorded answer against how the service actually "
+                       "behaves. The pass has been made and every limit now names its transport "
+                       "and its collateral, but whether those answers are RIGHT is a review and "
+                       "not something a test can take — a drill that searched the notes for the "
+                       "word 'UDP' would pass on a note that said anything at all")
 
 
 @pytest.mark.proves("ch1-4", depth="structural")
@@ -82,7 +114,7 @@ def test_an_instrumenting_limit_is_followed_by_an_accept():
     was deleted would silently become a drop-everything rule — the limit does not admit anything by
     itself, it only declines to decide."""
     for name, text in templates():
-        if not _HAS_LIMIT.search(text) or not _INSTRUMENTS.search(text):
+        if "instrument" not in limit_verdicts(text):
             continue
         chain = text[text.index("chain "):] if "chain " in text else text
         assert re.search(r"\baccept\b", chain), (
@@ -103,35 +135,41 @@ def test_every_limit_records_its_posture():
     one reader; others were rewritten to enforce by another who had no argument to read. An
     unexplained posture is indistinguishable from an accident, and both readers acted on that."""
     unargued = [name for name, text in templates()
-                if _HAS_LIMIT.search(text) and not _POSTURE.search(text)]
+                if limit_verdicts(text) and not _POSTURE.search(text)]
     assert not unargued, (
         f"{len(unargued)} template(s) carry a limit with no recorded argument for enforcing or "
         "instrumenting:\n  " + "\n  ".join(unargued)
         + "\nAdd a '# LIMIT POSTURE: <enforce|instrument> — <why>' note beside the rule.")
 
-
-@pytest.mark.proves("ch1-6", depth="structural")
-def test_a_recorded_posture_matches_what_the_rule_does():
-    """A note that disagrees with its rule is worse than no note, because it is believed.
-
-    ASSERTS THE NOTES EXIST FIRST. Without that this passes by having nothing to compare, and the
-    subject reads PROVEN off a vacuous check while its sibling drill is red — which is the
-    inert-grounding trap, and exactly the shape of fault this whole spec is about.
-    """
+    # And a note that disagrees with its rule is worse than no note, because it is believed.
+    #
+    # ONE DRILL, NOT TWO, AND THE REASON IS THE DEPTH. Citing one subject twice is the normal
+    # pattern here and is right — a structural half and a behavioural half say different things
+    # about the same claim, and the board keeps them apart because they sit at different rungs.
+    # Two citations at the SAME depth do not stay apart: they reduce to one status, a story drops
+    # failing citations by design, and the passing one wins. So a subject with two structural
+    # drills reads PROVEN off whichever holds while the other is red, and nothing on the board
+    # says so — ansible's ch9-6 was green exactly that way with a flag that named nothing.
+    # One depth, one drill; the ordering below then keeps the second half honest, because the
+    # comparison only runs once the notes it compares are known to exist.
     noted = [name for name, text in templates() if _POSTURE.search(text)]
-    assert noted, ("no template records a limit posture yet, so this drill would pass by having "
-                   "nothing to check — it is only meaningful once ch1-6's other half is")
+    assert noted, ("no template records a limit posture, so the comparison below would pass by "
+                   "having nothing to compare")
     wrong = []
     for name, text in templates():
-        note = _POSTURE.search(text)
-        if not note:
+        verdicts = limit_verdicts(text)
+        if not verdicts:
             continue
-        says = note.group("why").lower()
-        claims_enforce = "enforce" in says.split("—")[0].split("-")[0]
-        if claims_enforce and not _ENFORCES.search(text):
-            wrong.append(f"{name}: says enforce, no `over ... drop` in the rules")
-        if not claims_enforce and _ENFORCES.search(text) and not _INSTRUMENTS.search(text):
-            wrong.append(f"{name}: says instrument, but the rules drop")
+        if len(verdicts) > 1:
+            wrong.append(f"{name}: some of its limits {sorted(verdicts)} — one note cannot "
+                         "describe both, so either split the argument or make the rules agree")
+            continue
+        note = _POSTURE.search(text)
+        head = note.group("why").lower().split("—")[0]
+        claimed = "enforce" if "enforce" in head else "instrument"
+        actual = verdicts.pop()
+        if claimed != actual:
+            wrong.append(f"{name}: the note says {claimed}, the rules {actual}")
     assert not wrong, "a recorded posture disagrees with its rule:\n  " + "\n  ".join(wrong)
 
 
@@ -168,5 +206,6 @@ def test_the_ruleset_loads_whole_or_not_at_all():
 @pytest.mark.proves("ch1-8", depth="unit")
 def test_every_rule_can_be_defended():
     unwatched("ch1-8", "a reader asking 'why does this rule do that?' of each template and finding "
-                       "an answer — which is ch1-6 holding across the whole set rather than a "
-                       "separate observation")
+                       "an answer they accept. ch1-6 now holds across the whole set, which makes "
+                       "an answer PRESENT everywhere; that it is a good one is the judgement this "
+                       "chapter exists to invite and cannot make on its own behalf")

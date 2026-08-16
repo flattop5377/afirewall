@@ -6,10 +6,6 @@
   # generally serves it over its ORPort instead - so this is here to be left off, and exists
   # separately so that leaving it off does not also close the ORPort.
   #
-  # The limits carry `over ... drop`. The `... continue` form used by the older templates
-  # beside this one counts and then admits: when the limit fails to match, evaluation moves
-  # to the next rule, and the next rule is an unconditional accept.
-  #
   #############################################################################
 
   ##
@@ -33,6 +29,16 @@
 
 
   chain ACCEPT_DIRPORT {
+    ##
+    # LIMIT POSTURE: enforce — the counterparty is anonymous, self-replacing, and does not
+    # share its address with anyone who matters.
+    #
+    # Same argument as the ORPort beside it: the source is forgeable, but a directory client
+    # refused here is interchangeable and reconnects, so the collateral of a wrong drop is
+    # nothing the operator chose. Note that this flag is meant to be left disabled — current Tor
+    # serves directory data over the ORPort — so the posture matters mainly for being correct
+    # if it is ever turned on.
+    #
     ct state new tcp dport 9030 update @dirport_rate_limit { ip saddr limit rate over 50/minute } drop
     ct state new tcp dport 9030 add @dirport_connection_limit { ip saddr ct count over 200 } drop
     ct state new,established tcp dport 9030 accept
