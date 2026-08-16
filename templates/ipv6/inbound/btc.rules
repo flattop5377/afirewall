@@ -25,8 +25,22 @@
 
 
   chain ACCEPT_BTC {
-    ct state new tcp dport 8333 update @btc_rate_limit { ip6 saddr limit rate 50/minute } continue
-    ct state new tcp dport 8333 add @btc_connection_limit { ip6 saddr ct count over 200 } continue
+    ##
+    # LIMIT POSTURE: enforce — the counterparty is anonymous, self-replacing, and does not
+    # share its address with anyone who matters.
+    #
+    # The source is forgeable, so this is the third branch of ch1-3 rather than the easy one:
+    # what makes enforcing safe is not that the address is trustworthy but that refusing it
+    # costs nothing. A bitcoin node holds on the order of a hundred inbound peers and replaces
+    # a lost one within minutes, so the collateral of a wrong drop is one interchangeable peer
+    # for the 90s this set holds it — unlike ssh, smtp or syslog, where the party refused is
+    # one the operator chose and cannot substitute. A legitimate peer opens about one
+    # connection, three orders of magnitude under these limits, so a real peer never reaches
+    # them. What enforcing buys is concrete: without it, one address may hold 200+ concurrent
+    # connections and occupy the daemon's inbound slots by itself.
+    #
+    ct state new tcp dport 8333 update @btc_rate_limit { ip6 saddr limit rate over 50/minute } drop
+    ct state new tcp dport 8333 add @btc_connection_limit { ip6 saddr ct count over 200 } drop
     ct state new,established tcp dport 8333 accept
   }
 

@@ -2,10 +2,10 @@
   #
   ## TCP 8000 Rules — a check-in collector
   #
-  # Every host pushes a heartbeat here and the absence of one is what raises the
-  # alarm, so this port carries the signal that says the others are still working.
-  # Inbound is wanted only on the collector; a host that merely checks in needs
-  # the outbound half.
+  # Where a fleet pushes a heartbeat to one collector and the ABSENCE of one raises
+  # the alarm, this port carries the signal that says the others are still working.
+  # Inbound is wanted only on the collector; a host that merely checks in needs the
+  # outbound half.
   #
   #############################################################################
 
@@ -30,8 +30,16 @@
 
 
   chain ACCEPT_TCP8000 {
-    ct state new tcp dport 8000 update @tcp8000_rate_limit { ip saddr limit rate 5/minute } continue
-    ct state new tcp dport 8000 add @tcp8000_connection_limit { ip saddr ct count over 20 } continue
+    ##
+    # LIMIT POSTURE: instrument — enforcing would let a stranger manufacture alarms.
+    #
+    # Where absence of a heartbeat raises the alarm, a limit that drops turns a
+    # forged flood into an alert for a host that is perfectly healthy. An alarm anybody can
+    # induce is an alarm the operator learns to ignore, and losing the alerting system's
+    # credibility costs more than accepting the flood does.
+    #
+    ct state new tcp dport 8000 update @tcp8000_rate_limit { ip6 saddr limit rate 5/minute } continue
+    ct state new tcp dport 8000 add @tcp8000_connection_limit { ip6 saddr ct count over 20 } continue
     ct state new,established tcp dport 8000 accept
   }
 

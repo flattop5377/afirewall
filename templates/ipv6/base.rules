@@ -19,6 +19,8 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.dirport %}{% include 'ipv6/inbound/dirport.rules' %}{% endif %}
 {% if inbound.btc %}{% include 'ipv6/inbound/btc.rules' %}{% endif %}
 {% if inbound.wireguard %}{% include 'ipv6/inbound/wireguard.rules' %}{% endif %}
+{% if inbound.postgres %}{% include 'ipv6/inbound/postgres.rules' %}{% endif %}
+{% if inbound.udp51821 %}{% include 'ipv6/inbound/udp51821.rules' %}{% endif %}
 
 
   #############################################################################
@@ -50,6 +52,8 @@ table ip6 a-firewall-inbound-ipv6 {
 {% if inbound.dirport %}    tcp dport 9030 jump ACCEPT_DIRPORT{% endif %}
 {% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
 {% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
+{% if inbound.postgres %}    tcp dport 5432 jump ACCEPT_POSTGRES{% endif %}
+{% if inbound.udp51821 %}    udp dport 51821 jump ACCEPT_UDP51821{% endif %}
 
 {% if outbound.dhcp %}    udp sport 67 ct state established accept{% endif %}
 {% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
@@ -101,6 +105,21 @@ table ip6 a-firewall-inbound-ipv6 {
   # Sources:
   #   https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
   #   RFC 4890: Recommendations for Filtering ICMPv6 Messages in Firewalls
+  ##
+  #
+  # LIMIT POSTURE: enforce — and it enforces by FALLING THROUGH, which no other rule here
+  # does.
+  #
+  # The limit below is a match condition rather than a counted-and-ignored one: over
+  # 10/second the rule stops matching, nothing beneath it accepts that packet, and the chain
+  # policy drops it. So these rules refuse excess without the word `drop` appearing
+  # anywhere, and a reader who has learned the `continue` form beside them will read this
+  # backwards.
+  #
+  # Enforced because ICMP carries no service: the collateral of a wrong drop is diagnostics
+  # rather than a counterparty, so nothing here fails the replaceability test the service
+  # templates apply. What it does cost is recorded as ch1-U3.
+  #
   chain VALID_ICMP {
     icmpv6 type nd-neighbor-solicit accept
     icmpv6 type nd-neighbor-advert accept
@@ -307,6 +326,8 @@ table ip6 a-firewall-outbound-ipv6 {
 {% if inbound.dirport %}    tcp sport 9030 ct state established accept{% endif %}
 {% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
 {% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
+{% if inbound.postgres %}    tcp sport 5432 ct state established accept{% endif %}
+{% if inbound.udp51821 %}    udp sport 51821 ct state established accept{% endif %}
 
 {% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
 {% if outbound.dns %}    udp dport 53 jump ACCEPT_DNS{% endif %}
@@ -403,6 +424,15 @@ table ip6 a-firewall-outbound-ipv6 {
   #
   # Sources:
   #   https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+  ##
+  #
+  # LIMIT POSTURE: enforce — keyed on `ip daddr`, which is ours to choose, and enforcing by
+  # FALLING THROUGH rather than by saying `drop`.
+  #
+  # Over 10/second the rule stops matching, nothing beneath it accepts, and the chain policy
+  # drops. This is the first branch of ch1-3: the address the limit is keyed on is the one
+  # this host picked, so there is no forged source to aim it with. Enforced freely.
+  #
   chain VALID_ICMP {
     icmpv6 type nd-neighbor-solicit accept
     icmpv6 type nd-neighbor-advert accept

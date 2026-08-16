@@ -41,6 +41,16 @@
 
 
   chain ACCEPT_WIREGUARD {
+    ##
+    # LIMIT POSTURE: instrument — WireGuard already refuses load better than a packet filter
+    # can, and this rule is keyed on an address that legitimately moves.
+    #
+    # Under pressure WireGuard answers with a cookie: a rate defence that can still tell a
+    # real peer from a forged one, which nothing here can do. And the peer on this key is the
+    # dialer, whose address is dynamic by the design recorded above — so enforcing would spend
+    # a renumbered peer's allowance on forged traffic and refuse the very tunnel the rule
+    # exists for. Counted and admitted.
+    #
     ct state new udp dport 51820 update @wireguard_rate_limit { ip6 saddr limit rate 5/minute } continue
     ct state new udp dport 51820 add @wireguard_connection_limit { ip6 saddr ct count over 20 } continue
     ct state new,established udp dport 51820 accept

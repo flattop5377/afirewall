@@ -25,6 +25,15 @@
 
 
   chain ACCEPT_UDP1514 {
+    ##
+    # LIMIT POSTURE: instrument — this port carries the evidence, over a transport with no
+    # handshake to survive.
+    #
+    # UDP source addresses cost nothing to forge, so an enforcing limit here could be aimed at
+    # any shipper by anyone at all: the attacker never has to receive a reply. Silencing the
+    # logs of the host being attacked is the point of the exercise, and a rule that offers
+    # that on demand is worse than no rule. Counted and admitted.
+    #
     ct state new udp dport 1514 update @udp1514_rate_limit { ip saddr limit rate 5/minute } continue
     ct state new udp dport 1514 add @udp1514_connection_limit { ip saddr ct count over 20 } continue
     ct state new,established udp dport 1514 accept

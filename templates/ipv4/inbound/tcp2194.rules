@@ -25,6 +25,15 @@
 
 
   chain ACCEPT_TCP2194 {
+    ##
+    # LIMIT POSTURE: instrument — the authentication is what keeps strangers out, not this.
+    #
+    # 2194 is unassigned at IANA, so a host answering on it is running something whose clients
+    # it knows by name rather than something the internet dials. Where the transport
+    # authenticates before it carries anything, the handshake is what refuses a stranger, not
+    # this. Enforcing would add exactly one capability — anyone able to forge a known client's
+    # address can lock that client out — and none the authentication does not already have.
+    #
     ct state new tcp dport 2194 update @tcp2194_rate_limit { ip saddr limit rate 5/minute } continue
     ct state new tcp dport 2194 add @tcp2194_connection_limit { ip saddr ct count over 20 } continue
     ct state new,established tcp dport 2194 accept

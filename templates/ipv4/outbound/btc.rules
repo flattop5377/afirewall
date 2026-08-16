@@ -10,10 +10,6 @@
   # service, so 500 is far above anything it does and far below anything useful to an
   # attacker.
   #
-  # `over ... drop` rather than `... continue`. A limit whose rule carries no verdict is
-  # counted and then ignored: when it fails to match, evaluation simply moves to the next
-  # rule, and the next rule here accepts unconditionally.
-  #
   #############################################################################
 
   ##
@@ -26,6 +22,16 @@
   }
 
   chain ACCEPT_BTC {
+    ##
+    # LIMIT POSTURE: enforce — the key is `meta skuid`, which no remote party can set.
+    #
+    # This is the first branch of ch1-3 and the only clean one in the package: skuid is read
+    # from the local socket's owner, so unlike every inbound limit here there is no forged
+    # source to aim it with and no legitimate peer whose allowance can be spent by someone
+    # else. The weaponisation argument that makes the inbound limits instrument simply does
+    # not apply, which is why enforcing outbound is safe even where the same service
+    # instruments inbound.
+    #
     ct state new meta skuid btc add @btc_outbound_connection_limit { meta skuid ct count over 500 } drop
     ct state new meta skuid btc limit rate over 50/second drop
     ct state new,established meta skuid btc accept

@@ -7,10 +7,6 @@
   # relays that still publish directory data mostly serve it over the ORPort. A port nobody
   # needs open should not be opened by the same switch as one that is.
   #
-  # The limits carry `over ... drop`. The `... continue` form used by the older templates
-  # beside this one counts and then admits: when the limit fails to match, evaluation moves
-  # to the next rule, and the next rule is an unconditional accept.
-  #
   #############################################################################
 
   ##
@@ -34,6 +30,19 @@
 
 
   chain ACCEPT_ORPORT {
+    ##
+    # LIMIT POSTURE: enforce — the counterparty is anonymous, self-replacing, and does not
+    # share its address with anyone who matters.
+    #
+    # The source is forgeable, so this is the third branch of ch1-3 rather than the easy one:
+    # what makes enforcing safe is not that the address is trustworthy but that refusing it
+    # costs nothing. Tor is redundant by design — a relay or client refused here reconnects,
+    # or reaches the network by another path — so the collateral of a wrong drop is one
+    # interchangeable peer for as long as the set holds it, unlike ssh, smtp or syslog where
+    # the party refused is one the operator chose. A legitimate peer's rate sits far under these
+    # limits, and what enforcing buys is that a single address cannot occupy the relay by
+    # itself.
+    #
     ct state new tcp dport 9001 update @orport_rate_limit { ip6 saddr limit rate over 50/minute } drop
     ct state new tcp dport 9001 add @orport_connection_limit { ip6 saddr ct count over 200 } drop
     ct state new,established tcp dport 9001 accept
