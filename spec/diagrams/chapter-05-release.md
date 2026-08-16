@@ -26,9 +26,12 @@ on trixie. The templates already use `typeof` in set definitions, `ct count`, dy
 a second line is a real prospect, and the thing that makes it necessary is a *dependency*, not a
 suite name.
 
-**Which makes the missing declaration the urgent part.** `Depends:` says `nftables` with no version
-at all. A host with an older nft installs this package successfully and then fails to load a
-ruleset — at `afirewall start`, on a machine that now has no firewall.
+**Which made the missing declaration the urgent part.** `Depends:` said `nftables` with no version
+at all: a host with an older nft installed the package successfully and then failed to load a
+ruleset — at `afirewall start`, on a machine that now had no firewall. It says `>= 1.0.2` now, and
+the number was measured rather than reasoned (`ch5-U1`). **The construct that draws the line is not
+one of the ones above** — it is `tcp flags urg / urg,ack`, and every feature that looked riskier
+parses on nft 0.9.3.
 
 *Shapes and colours: [legend](legend.md).*
 
@@ -75,7 +78,7 @@ flowchart TD
 | `ch5-3` | upstream/latest is a destination, never a workspace | **Nothing is authored on a branch whose job is to receive.** `upstream/latest` currently holds 26 non-merge commits master has never seen, and that single fact explains the three-way licence confusion, the `pyproject.toml` that could not be edited without breaking `dpkg-source`, and the conflicts a release hits today. The rule is checkable in one command — `git log upstream/latest ^master --no-merges` must be empty — and it is the rule the whole chapter rests on |
 | `ch5-4` | a tag records the release | **A release is remembered by `upstream/latest/<version>` and `debian/latest-<version>-<rev>`, not by a branch.** A branch invites commits; a tag cannot receive them. Every release branch this repository made — three of them — had to be merged home, and the drift is what happened when one was not. A tag says what shipped without offering anywhere to put something new |
 | `ch5-5` | what changed? | **Three kinds of change and only one needs a branch.** New source is a new upstream version, tagged, linear. A packaging-only fix — a wrong dependency, a bad `.install` line — is a **Debian revision**: `-1` to `-2`, no new upstream version, no new tarball, pristine-tar untouched. **This is what the native format was costing**, because a native package has no revision, so every packaging fix forced a fake upstream release. Only genuinely maintaining two lines at once needs a branch, and DEP-14 already names it: the `/latest` in `debian/latest` and `upstream/latest` is the slot `debian/bookworm` and `upstream/1.x` go beside |
-| `ch5-6` | does it need an nft the target may not have? | **The generated ruleset is the artifact, and it has to parse on the target's nftables.** That makes nft's *version* a dependency of the output rather than of the code, which is the one this package keeps forgetting: `Depends:` names `nftables` with no version, while the templates already use `typeof` in set definitions, `ct count`, dynamic sets and `meta skuid`. A host with an older nft installs cleanly and then fails at `afirewall start` — with no firewall, which is the worst moment to discover a dependency. **This is also the real reason a second line may be needed** (`ch5-5`), and the reason it will be needed sooner once namespaces land |
+| `ch5-6` | does it need an nft the target may not have? | **The generated ruleset is the artifact, and it has to parse on the target's nftables.** That makes nft's *version* a dependency of the output rather than of the code, which is the one this package had forgotten entirely: `Depends:` named `nftables` with no version at all, so a host with an older one installed cleanly and then failed at `afirewall start` — with no firewall, which is the worst moment to discover a dependency. **The floor is measured, not reasoned** (`ch5-U1`): a full ruleset through `nft -c` on five versions, failing on 0.9.3 and 0.9.8, parsing on 1.0.2, 1.0.6 and 1.1.3. Reading changelogs would have produced the wrong number from the right list of features, because the construct that draws the line is `tcp flags urg / urg,ack` rather than anything that looked risky. **This is also the real reason a second line may be needed** (`ch5-5`), and the reason it will be needed sooner once namespaces land |
 | `ch5-7` | what shipped can be rebuilt byte for byte | **A release nobody can reproduce is a release you cannot debug.** `3.0 (quilt)` plus pristine-tar means the exact `.orig.tar.gz` is regenerable from git years later, so a bug report against an old version can be built and stepped through rather than guessed at. Verified round-trip rather than assumed: `pristine-tar checkout` reproduced `20260815.0.0` at the same SHA256 as the tarball gbp generated |
 | `ch5-8` | a release nobody has to negotiate | **The measure is that cutting a release answers no questions.** Not that it is automated — that no step requires deciding which branch was right, which licence file wins, or whether a version bump belongs here or there. Every one of those decisions has been made at least once in this repository's history, differently each time |
 
@@ -93,19 +96,34 @@ stays rebuildable (`ch5-7`).
 
 ## Open unknowns
 
-- **ch5-U1 — the nft floor is not known, only that there is one.** `typeof` in a set definition,
-  `ct count`, dynamic sets and `meta skuid` all arrived at different times, and nothing here has
-  established which is the latest of them or what the earliest nftables that loads a full generated
-  ruleset actually is. The honest way to settle it is to render everything and run `nft -c` under
-  the oldest nft that matters — a bookworm container is enough — rather than reading changelogs.
-  Until then `ch5-6` can assert that a version is declared but not that the number is right.
-  Anchored to `ch5-6`.
+- **ch5-U1 — MEASURED 2026-08-16, and the answer was not the feature anybody would have guessed.**
+  A ruleset with every flag enabled, both families, through `nft -c` on five versions: **0.9.3 and
+  0.9.8 fail with a syntax error; 1.0.2, 1.0.6 and 1.1.3 parse.** The construct that draws the line
+  is `tcp flags urg / urg,ack` — the symbolic flag/mask form in `INVALID_FLAGS` — and not `typeof`
+  in a set definition, `ct count`, dynamic sets or `meta skuid`, all of which pass on 0.9.3. Reading
+  changelogs would have produced the wrong number from the right list.
+
+  `Depends: nftables (>= 1.0.2)` is the oldest version measured to accept the whole ruleset. 0.9.9
+  through 1.0.1 are untested and the constraint claims nothing about them: one release too strict
+  costs a host that would have worked, one too loose costs a host its firewall, and the asymmetry
+  decides which way to round.
+
+  **What this does not settle is the same question asked again later.** Every template added from
+  here can raise the floor, and nothing re-measures it — which is `ch5-U4`.
 
 - **ch5-U2 — the divergence has to be reconciled before any of this holds.** `upstream/latest` is
   36 commits ahead and 13 behind master, and a trial merge conflicts on three files. Master's side
   is the newer one on all three, so the reconciliation is not a judgement call — but whether to
   resolve the merge or reset `upstream/latest` to master outright is, because the second discards a
   history that the release tags no longer need. Anchored to `ch5-3`.
+
+- **ch5-U4 — the floor is measured once and can move under any template.** `ch5-U1` established
+  `>= 1.0.2` for the ruleset as it stands on 2026-08-16. A service added by `afirewall add-service`
+  (`ch2`), or anything the namespace work needs (`ch4`), can require newer syntax and nothing would
+  notice: the templates would render, this workstation's nft would accept them, and the constraint
+  in `debian/control` would keep claiming 1.0.2. The reading is cheap and containerised, so the
+  question is whether it belongs in the release sequence or in whatever runs the drills. Anchored
+  to `ch5-6`.
 
 - **ch5-U3 — nothing decides when a second line actually starts.** `ch5-5` says a branch is for
   maintaining two lines at once and `ch5-6` says nft is what will force one, but not at which point:
