@@ -1,0 +1,28 @@
+# What this project declares about itself. One file, read by Plumb for every language.
+adapter = "python"
+
+# `stories` is deliberately unset: a declared set handed over as data is a second home for ids
+# whose first home is the chapter's trace table. Subjects are discovered from what the drills cite.
+# stories = ...
+
+production   = ["afirewall"]
+sources      = ["afirewall"]
+
+# The generator is run as a command against a config and a template tree; there is no request
+# entering a wired system.
+entry_points = []
+
+# Off because it is slow, not because it is optional. `plumb board --mutation` for a run.
+mutation = false
+
+# WHAT IS SETTLED BY READING, and it is most of this chapter. A limit's posture, the config's
+# shape, the absence of iptables and the presence of an argument beside a rule are all facts about
+# the tree. What is NOT settled that way is whether a limit set above a bounded legitimate rate
+# refuses abuse without refusing use — that is a claim about traffic (ch1-U2), and it stays
+# unwatched rather than being answered by a template that parses.
+[archetypes]
+"ch1-1" = "structural"
+"ch1-2" = "structural"
+"ch1-4" = "structural"
+"ch1-6" = "structural"
+"ch1-7" = "structural"

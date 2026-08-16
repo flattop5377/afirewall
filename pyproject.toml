@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["spec", "drills", "test"]
+pythonpath = ["spec", "drills", "."]
+python_files = ["chapter_*.py", "test_*.py"]
+python_functions = ["test_*", "ch[0-9]*_[0-9]*"]
+markers = [
+    "proves(id, depth): a drill citing the chapter claim it proves, at a depth",
+    "informs(id, about): a drill citing a claim it bears on, naming the aspect",
+]
