@@ -232,3 +232,31 @@ def test_every_rule_can_be_defended():
                        "an answer they accept. ch1-6 now holds across the whole set, which makes "
                        "an answer PRESENT everywhere; that it is a good one is the judgement this "
                        "chapter exists to invite and cannot make on its own behalf")
+
+
+@pytest.mark.proves("ch1-9", depth="structural")
+def test_incoherent_traffic_is_dropped_before_any_flag_is_consulted():
+    """The package's other reason to exist, asserted so it cannot be quietly lost.
+
+    These four chains are what a host gets from installing afirewall at all — they run at
+    `priority raw`, ahead of every service decision, and none of them reads the configuration. A
+    flag cannot turn them off and a missing flag cannot bypass them, which is exactly why they are
+    the part that does not need arguing per service.
+
+    THE COUNTERS ARE PART OF THE CLAIM, not decoration. `nft list counters` says whether a rule has
+    ever fired, so a drop rule that matches nothing is visible rather than assumed — which is the
+    same standard this chapter holds a limit to.
+    """
+    for family in ("ipv4", "ipv6"):
+        text = (ROOT / "templates" / family / "base.rules").read_text()
+        for chain in ("SPOOFING", "INVALID_FLAGS", "PORT_ZERO"):
+            assert f"chain {chain} {{" in text, (
+                f"{family}/base.rules no longer defines {chain}. It runs ahead of every service "
+                "decision and reads no flag, so losing it silently weakens every host that "
+                "installs this package, whatever their configuration says")
+        drops = [line.strip() for line in text.splitlines()
+                 if line.strip().endswith("drop") and "counter name" in line]
+        assert drops, (
+            f"{family}/base.rules has no counted drops left, so nothing can say whether the "
+            "sanity rules have ever fired — a rule that matches nothing looks identical to one "
+            "that is working")

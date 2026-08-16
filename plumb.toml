@@ -26,6 +26,9 @@ mutation = false
 "ch1-4" = "structural"
 "ch1-6" = "structural"
 "ch1-7" = "structural"
+# ch1-9 IS SHAPE: four chains exist, run ahead of every service decision, and read no flag. That is
+# settled by reading. Whether they DROP what they claim to is traffic, and belongs with ch1-U2.
+"ch1-9" = "structural"
 # CHAPTER 2 IS STRUCTURAL BECAUSE IT IS ABOUT A TOOL'S SHAPE — does an authoring path exist, does
 # it take a name rather than a bare port, does it refuse a posture with no reason, does it write
 # both families. All of that is settled by reading, and all of it currently reads as absent, which
@@ -37,3 +40,12 @@ mutation = false
 "ch2-5" = "structural"
 "ch2-6" = "structural"
 "ch2-7" = "structural"
+# CHAPTER 3 IS THE SHAPE OF AN INTERFACE — does a subcommand exist, does it refuse a dead flag,
+# does it distinguish a no-op, does it say so in something a caller cannot misread. All of that is
+# settled by running the command against this tree, which needs no host and no root. What is NOT
+# settled is that a real converge goes quiet on its second pass (ch3-U3), which needs a fleet.
+"ch3-2" = "structural"
+"ch3-3" = "structural"
+"ch3-4" = "structural"
+"ch3-5" = "structural"
+"ch3-6" = "structural"
