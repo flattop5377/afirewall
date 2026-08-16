@@ -4,5 +4,5 @@
   #
   #############################################################################
   chain ACCEPT_DHCP {
-    ct state new,established udp dport 67 accept
+    ct state new,established udp dport 547 accept
   }
