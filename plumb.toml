@@ -54,9 +54,14 @@ mutation = false
 # whether packaging sits where it belongs, whether a release is tagged in both places - all read
 # from git. What is NOT settled here is the nft floor's actual number (ch5-U1, needs an old nft)
 # and whether a real release runs without a question (ch5-U2).
+# ch5-1 and ch5-8 read files and refs rather than running anything - the release sequence being
+# present, and the artifacts a finished release leaves behind. Both are inspection, and the board
+# is right to want that said rather than inferred.
+"ch5-1" = "structural"
 "ch5-2" = "structural"
 "ch5-3" = "structural"
 "ch5-4" = "structural"
 "ch5-5" = "structural"
 "ch5-6" = "structural"
 "ch5-7" = "structural"
+"ch5-8" = "structural"
