@@ -9,22 +9,25 @@ afirewall (20260815.0.0) unstable; urgency=medium
   * Removed quilt's series file.  Added .gitignore to ignore working files
 
   [ flattop5377 ]
-  * Scope spoof drops to the external device, and fix an IPv6 ruleset that never loaded
+  * Scope spoof drops to the external device, and fix an IPv6 ruleset that never
+    loaded
   * Add a WireGuard service, and give IPv6 the spoof list it never had
   * Send btc and dns to their own chains
-  * Disable a service whose user is missing, and validate before tearing anything down
-  * Bound the outbound grant, drop three dead includes, and fix the escape warnings
+  * Disable a service whose user is missing, and validate before tearing
+    anything down
+  * Bound the outbound grant, drop three dead includes, and fix the escape
+    warnings
   * Split inbound tor into orport and dirport, and gate config against templates
   * tcp8000, for a check-in collector
   * Pin the branch layout and build outside the tree
 
- -- Flattop5377 <flattop5377@proton.me>  Sat, 15 Aug 2026 17:49:26 -0600
+ -- Flattop5377 <Flattop5377@proton.me>  Sat, 15 Aug 2026 17:49:26 -0600
 
 afirewall (20250429.0.0) unstable; urgency=low
 
   [ Flattop ]
   * Created IPV6 rules to match all IPV4 rules. Closes: 24
-  * Moved from Pre-Alpha to Alpha. Ready for testing on 
+  * Moved from Pre-Alpha to Alpha. Ready for testing on
     non-production systems.
 
  -- Flattop5377 <flattop5377@proton.me>  Tue, 29 Apr 2025 12:18:12 -0600
@@ -53,7 +56,7 @@ afirewall (20240921.0.3) UNRELEASED; urgency=low
 
   [ Flattop ]
   * Fixed packaging error so afirewall is placed in /usr/sbin/afirewall
-  * Created a Debian Package Repository on github: 
+  * Created a Debian Package Repository on github:
       https://github.com/flattop5377/debrepo
   * Removed -c and --config.  Use -b or --basedir.  Closes: 3
   * Removed -template.  Use -b or --basedir.
