@@ -1,0 +1,82 @@
+# CONFFILES THIS PACKAGE NO LONGER SHIPS, and the migration for hosts that already have them.
+#
+# Templates and lists moved to /usr/share/afirewall, so dpkg has to be told these are gone rather
+# than left to keep them forever as orphans that shadow the shipped copies - afirewall reads /etc
+# first, so a leftover would silently win over every future update.
+#
+# rm_conffile is the right tool and its behaviour is the reason ch7-U1 could be closed: an
+# UNMODIFIED file is removed silently, and a MODIFIED one is moved aside to .dpkg-bak rather than
+# kept active. So nobody's change is discarded and nobody's change goes on deciding what happens
+# on upgrade. Safe, and not silent about it.
+rm_conffile /etc/afirewall/templates/ipv4/base.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/baculadirector.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/baculafiledaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/baculastoragedaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/btc.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/dirport.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/http.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/https.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/orport.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/postgres.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/smtp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/ssh.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/syslogtls.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/tcp2194.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/tcp8000.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/udp1514.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/udp51821.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/inbound/wireguard.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/baculadirector.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/baculafiledaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/baculastoragedaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/btc.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/dhcp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/dns.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/http.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/https.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/ntp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/smtp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/ssh.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/syslogtls.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/tcp2194.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/tcp8000.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/tor.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/udp1514.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv4/outbound/wireguard.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/base.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/baculadirector.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/baculafiledaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/baculastoragedaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/btc.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/dirport.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/http.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/https.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/orport.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/postgres.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/smtp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/ssh.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/syslogtls.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/tcp2194.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/tcp8000.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/udp1514.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/udp51821.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/inbound/wireguard.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/baculadirector.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/baculafiledaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/baculastoragedaemon.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/btc.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/dhcp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/dns.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/http.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/https.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/ntp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/smtp.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/ssh.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/syslogtls.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/tcp2194.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/tcp8000.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/tor.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/udp1514.rules 20260816.2.0~
+rm_conffile /etc/afirewall/templates/ipv6/outbound/wireguard.rules 20260816.2.0~
+rm_conffile /etc/afirewall/lists/spoofed_IPV4_networks.list 20260816.2.0~
+rm_conffile /etc/afirewall/lists/spoofed_IPV6_networks.list 20260816.2.0~

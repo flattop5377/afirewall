@@ -9,5 +9,15 @@ afirewall.conf etc/afirewall
 # be administered, resolve, and update. A restore that guessed at that would close ssh.
 afirewall.conf usr/share/afirewall
 afirewall/afirewall.py => /usr/sbin/afirewall
-lists etc/afirewall
-templates etc/afirewall
+# TEMPLATES AND LISTS ARE THE PACKAGE'S, NOT THE ADMIN'S, so they ship here and are replaced on
+# upgrade without a question. They used to install under /etc, which made debhelper mark all 73 of
+# them conffiles - and an upgrade then kept an edited one, leaving an old template beside a new
+# base.rules. That is exactly the three-way skew the package's own tests forbid, on the one machine
+# where nothing is checking, and what it produces is a table nft refuses: a whole address family
+# lost rather than one service.
+#
+# An override still works. afirewall reads /etc/afirewall first and falls back to here, so a
+# changed ssh.rules under /etc wins - it just stops being the thing that decides what future
+# upgrades may do.
+lists usr/share/afirewall
+templates usr/share/afirewall
