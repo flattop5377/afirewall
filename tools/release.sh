@@ -62,11 +62,54 @@ say "publishing to $DEBREPO"
 reprepro -b "$DEBREPO" includedeb stable "$BUILD/afirewall_${VERSION}-1_all.deb"
 git -C "$DEBREPO" add -A
 git -C "$DEBREPO" commit -q -m "afirewall $VERSION-1"
-git -C "$DEBREPO" push
+
+# EXPLICIT REFSPECS, BECAUSE A BARE `git push` NEEDS UPSTREAM TRACKING AND FAILED WITHOUT IT.
+# That is what went wrong on 20260816.2.0-1: debrepo's master had no tracking branch, the push
+# errored, `set -e` ended the script there, and the afirewall push below never ran. Everything
+# looked finished - archive updated, package built, both tags made - and nothing was public.
+git -C "$DEBREPO" push origin HEAD:master
 
 say "pushing branches and tags"
-git -C "$REPO" push origin master upstream/latest debian/latest pristine-tar --tags
+git -C "$REPO" push origin \
+    refs/heads/master:refs/heads/master \
+    refs/heads/upstream/latest:refs/heads/upstream/latest \
+    refs/heads/debian/latest:refs/heads/debian/latest \
+    refs/heads/pristine-tar:refs/heads/pristine-tar \
+    "refs/tags/upstream/latest/$VERSION" \
+    "refs/tags/debian/latest/$VERSION-1" 2>/dev/null \
+  || git -C "$REPO" push origin master upstream/latest debian/latest pristine-tar --tags
 
-# raw.githubusercontent caches for a few minutes, so an install straight after a push still sees
-# the previous index. That is the CDN and not the release; wait it out before believing a failure.
-say "done. `apt update` may serve the previous index for a few minutes."
+# AND THEN CHECK, because an exit code is what the previous version trusted and it was not enough.
+# A release that looks complete and is not is the failure this whole sequence exists to avoid, so
+# the last thing it does is ask the remote what it has rather than assume the push said so.
+say "verifying the remote has what was just built"
+FAILED=0
+for ref in master upstream/latest debian/latest pristine-tar; do
+    local_sha="$(git -C "$REPO" rev-parse "$ref")"
+    remote_sha="$(git -C "$REPO" ls-remote origin "refs/heads/$ref" | cut -f1)"
+    if [ "$local_sha" != "$remote_sha" ]; then
+        echo "   NOT PUSHED: $ref (local ${local_sha:0:8}, remote ${remote_sha:0:8})"
+        FAILED=1
+    fi
+done
+for tag in "upstream/latest/$VERSION" "debian/latest-$VERSION-1"; do
+    if ! git -C "$REPO" ls-remote --tags origin | grep -q "refs/tags/$tag\$"; then
+        echo "   NOT PUSHED: tag $tag"
+        FAILED=1
+    fi
+done
+debrepo_local="$(git -C "$DEBREPO" rev-parse HEAD)"
+debrepo_remote="$(git -C "$DEBREPO" ls-remote origin HEAD | cut -f1)"
+if [ "$debrepo_local" != "$debrepo_remote" ]; then
+    echo "   NOT PUSHED: the archive"
+    FAILED=1
+fi
+if [ "$FAILED" != "0" ]; then
+    echo
+    echo "THE RELEASE IS NOT PUBLISHED. Everything above succeeded locally; the push did not."
+    exit 1
+fi
+
+say "published. Note that raw.githubusercontent caches for a few minutes, so an"
+say "'apt update' straight after this can still serve the previous index. That is"
+say "the CDN rather than the release - the verification above already asked the remote."

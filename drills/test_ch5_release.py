@@ -67,11 +67,32 @@ def test_the_release_sequence_is_in_the_repository():
             ("a Debian revision on the version (ch5-5)", "$VERSION-1"),
             ("commit the pristine-tar delta (ch5-7)", "--git-pristine-tar-commit"),
             ("tag the packaging that shipped (ch5-4)", "--git-tag"),
-            ("publish to the archive", "includedeb")):
+            ("publish to the archive", "includedeb"),
+            ("push with an explicit refspec", "HEAD:master"),
+            ("ask the remote what it actually has", "ls-remote")):
         assert needle in text, f"tools/release.sh has no step that would {phase}"
     assert "--publish" in text, (
         "the script publishes unconditionally, so there is no way to look at what a release "
         "produced before it is public")
+
+    # AND IT HAS TO CHECK ITS OWN PUSH. On 20260816.2.0-1 a bare `git push` in the archive needed
+    # upstream tracking it did not have, the push errored, `set -e` ended the script there, and the
+    # branch and tag push below it never ran. Archive updated, package built, both tags made, and
+    # nothing public. An exit code was what that version trusted; asking the remote is what this
+    # one does, and the drill pins it because the failure is invisible by construction.
+    # COUNTED, NOT MERELY PRESENT. A first cut of this looked for one `ls-remote` and passed with
+    # two of the three checks deleted, because the other two still matched — which is the same
+    # too-loose-regex fault it was written to guard against. Three things get pushed and all three
+    # have to be asked about: the branches, the tags, and the archive.
+    asked = len(re.findall(r"ls-remote", text))
+    assert asked >= 3, (
+        f"the script asks the remote {asked} time(s). Three separate things are pushed - the "
+        "branches, the release tags, and the archive - and each needs its own answer")
+    assert re.search(r"NOT PUSHED", text) and re.search(r"^\s*exit 1", text, re.M), (
+        "the script does not fail when the remote disagrees with what it just built. A release "
+        "that looks complete and is not is the failure this whole sequence exists to avoid, and "
+        "it has happened once already: a bare `git push` needed tracking it did not have, `set -e` "
+        "ended the run, and everything after it silently did not happen")
 
 
 @pytest.mark.proves("ch5-2", depth="structural")
