@@ -19,6 +19,35 @@ export DEBFULLNAME="${DEBFULLNAME:-Flattop5377}"
 
 say() { printf '\n== %s\n' "$*"; }
 
+# COME BACK TO WHERE YOU STARTED. This walks the checkout through upstream/latest and debian/latest
+# and used to leave it on the last one, which is a trap rather than an inconvenience: debian/latest
+# carries master's files merged in, so work done there afterwards looks completely normal and is
+# invisible until the next release merge either duplicates it or undoes it. It cost a commit
+# immediately after the previous fix went in.
+#
+# ON A TRAP, so it holds when the script fails - which is exactly when somebody is most likely to be
+# left somewhere they did not choose. AND ONLY IF THE TREE IS CLEAN: a run that stopped on a merge
+# conflict should leave you standing in the conflict, not tidied away from it.
+STARTED_ON="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
+
+finish() {
+    code=$?
+    now="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$STARTED_ON")"
+    if [ "$now" != "$STARTED_ON" ]; then
+        if [ -z "$(git -C "$REPO" status --porcelain)" ]; then
+            git -C "$REPO" checkout -q "$STARTED_ON"
+            echo "   (back on $STARTED_ON)"
+        else
+            echo
+            echo "   LEFT ON $now WITH UNCOMMITTED WORK - that is where the failure is, so look"
+            echo "   there rather than being moved away from it. When you are done:"
+            echo "     git checkout $STARTED_ON"
+        fi
+    fi
+    exit $code
+}
+trap finish EXIT
+
 say "checking the tree is clean and the drills agree"
 [ -z "$(git -C "$REPO" status --porcelain)" ] || { echo "working tree is dirty"; exit 1; }
 git -C "$REPO" rev-parse --verify --quiet "refs/tags/upstream/latest/$VERSION" >/dev/null \

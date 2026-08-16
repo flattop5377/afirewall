@@ -69,7 +69,8 @@ def test_the_release_sequence_is_in_the_repository():
             ("tag the packaging that shipped (ch5-4)", "--git-tag"),
             ("publish to the archive", "includedeb"),
             ("push with an explicit refspec", "HEAD:master"),
-            ("ask the remote what it actually has", "ls-remote")):
+            ("ask the remote what it actually has", "ls-remote"),
+            ("put the checkout back where it started", "trap finish EXIT")):
         assert needle in text, f"tools/release.sh has no step that would {phase}"
     assert "--publish" in text, (
         "the script publishes unconditionally, so there is no way to look at what a release "
