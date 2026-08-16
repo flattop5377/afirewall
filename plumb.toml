@@ -75,3 +75,14 @@ mutation = false
 "ch6-5" = "structural"
 "ch6-6" = "structural"
 "ch6-7" = "structural"
+# CHAPTER 7 IS WHERE FILES GO, which is stated in debian/afirewall.install and in the loader, and
+# is therefore settled by reading. What is NOT is an upgrade actually behaving (ch7-U2), which needs
+# two releases and a host to take one. ch7-3 and ch7-5 are NOT declared here: they import the
+# module to read its constants - which is executing it, and the board was right to refuse the
+# word "structural" for that. They read the assignments out of the source instead.
+"ch7-1" = "structural"
+"ch7-2" = "structural"
+"ch7-3" = "structural"
+"ch7-5" = "structural"
+"ch7-4" = "structural"
+"ch7-6" = "structural"

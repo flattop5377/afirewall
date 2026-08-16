@@ -59,8 +59,31 @@ def test(template_directory, interface, config):
          sys.exit('NFT syntax validation failed on ' + interface.family.name + ': ' + nft_result.stderr)
       return nft_input
 
+#: Where the package's own copies live. THE ADMIN'S COPY WINS, and that ordering is the whole
+#: arrangement: templates and lists are the package's, revised as it learns things, so they ship
+#: here and are replaced on upgrade without asking. A file of the same name under the base
+#: directory takes precedence, so somebody who needs a different ssh.rules still gets one - what
+#: they no longer get is their copy silently deciding what happens on every future upgrade.
+#:
+#: They used to install only under /etc, which made all 73 of them dpkg conffiles. An upgrade then
+#: kept an edited one and left an OLD TEMPLATE BESIDE A NEW base.rules - precisely the three-way
+#: skew this package's own tests forbid, on the one machine where no test is running, producing a
+#: table nft refuses and costing the host a whole address family.
+SHIPPED = '/usr/share/afirewall'
+
+#: Where the rendered ruleset goes. See process_scripts for why it is not the base directory.
+GENERATED = '/run/afirewall'
+
+def first_existing(*paths):
+   """The first of these that is there, or the last as the thing to complain about."""
+   for path in paths:
+      if os.path.exists(path):
+         return path
+   return paths[-1]
+
 def get_spoofed_networks(base_directory, interface):
-   filename = base_directory + '/lists/spoofed_' + interface.family.name + '_networks.list'
+   name = '/lists/spoofed_' + interface.family.name + '_networks.list'
+   filename = first_existing(base_directory + name, SHIPPED + name)
    local_network = interface.network
    spoofed_networks  = []
    # Both families. This read used to be wrapped in `if interface.family == Family.IPV4`,
@@ -87,11 +110,17 @@ def get_spoofed_networks(base_directory, interface):
 
 def process_scripts(base_directory, interface, config):
    env = Environment(
-      loader = FileSystemLoader([base_directory + '/templates', './templates'])
+      loader = FileSystemLoader([base_directory + '/templates', SHIPPED + '/templates'])
    )
 
    template_name = "{family}/base.rules".format(family=interface.family.name.lower());
-   output_name = base_directory + "/" + interface.family.name.lower() + ".nft"
+   # GENERATED, SO IT IS NEITHER CONFIGURATION NOR DATA. This is derived from the config and
+   # rebuilt on every start. Under /etc it was unowned by dpkg and churned beneath anything
+   # watching configuration for change. /run rather than /var/lib because it empties on boot,
+   # which makes loading a ruleset that no longer matches the configuration impossible rather
+   # than merely unlikely.
+   os.makedirs(GENERATED, exist_ok=True)
+   output_name = GENERATED + "/" + interface.family.name.lower() + ".nft"
 
    spoofed_networks = get_spoofed_networks(base_directory, interface)
 
@@ -275,7 +304,7 @@ def get_parser():
    # two options are for.
    parser.add_argument('-ipv4dest', help='address used to find the external ipv4 device and source address, by routing table lookup - no packet is sent - default 192.0.2.1', default='192.0.2.1')
    parser.add_argument('-ipv6dest', help='address used to find the external ipv6 device and source address, by routing table lookup - no packet is sent - default 2001:db8::1', default='2001:db8::1')
-   parser.add_argument('-b', '--basedir', help='path to the base configuration directory - default /etc/afirewall', default='/etc/afirewall')
+   parser.add_argument('-b', '--basedir', help='path to the configuration directory, which overrides what the package ships in /usr/share/afirewall - default /etc/afirewall', default='/etc/afirewall')
    return parser
 
 def parse_arguments():
@@ -437,7 +466,7 @@ if __name__ == "__main__":
          for interface in interfaces:
             nft_input = test(args.basedir, interface, config)
          stop()
-         for file in glob.glob(args.basedir + '/ipv[46].nft'):
+         for file in glob.glob(GENERATED + '/ipv[46].nft'):
              print('Loading rules from ' + file)
              start(file)
       case 'stop' | 'flush':
