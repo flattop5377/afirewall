@@ -494,3 +494,60 @@ class TestFamilySpecificPorts(unittest.TestCase):
         """The specific numbers, because 'differs from IPv4' would also be satisfied by a typo."""
         self.assertEqual(['547'], self.ports('templates/ipv6/outbound/dhcp.rules'))
         self.assertEqual(['67'], self.ports('templates/ipv4/outbound/dhcp.rules'))
+
+    def testDhcpRepliesDoNotDependOnConntrack(self):
+        """The reply to a DHCP request is not reliably the return direction of it.
+
+        A client that broadcasts or multicasts its request gets an answer from the server's own
+        unicast address, so conntrack sees no matching tuple and the reply arrives INVALID or NEW.
+        A rule asking for ESTABLISHED then never matches, the reply dies on the chain policy
+        without touching a counter, and the lease runs out with nothing to say why.
+
+        MEASURED IN BOTH FAMILIES, AND THEY DID NOT AGREE — which is the reason this test states a
+        rule rather than a fact. On the host this was found on:
+
+          IPv6  firewall up, a ten-minute lease counted 600 down to 25 and never renewed; firewall
+                stopped, back to 578 within seconds. A forced reconfigure with the firewall up lost
+                the address entirely and did not get it back.
+          IPv4  renewed AND fully re-acquired through the same firewall - the journal shows `DHCP
+                lease lost` followed by `acquired from 169.254.0.2` - because networkd talks
+                unicast to a server it already knows, so the tuple matches and ESTABLISHED holds.
+
+        So IPv4 was not broken, and an earlier version of this docstring said it was. What is true
+        is that IPv4 works BY THE CLIENT'S CHOICE of unicast, not by anything the rule guarantees.
+        A firewall that depends on which destination a DHCP client picks is a firewall that works
+        until the client changes, and the port pair is what it can say for itself.
+        """
+        for family, server, client in (('ipv4', '67', '68'), ('ipv6', '547', '546')):
+            with self.subTest(family=family):
+                rules = [l.strip() for l in open('templates/' + family + '/base.rules')
+                         if 'outbound.dhcp' in l and 'sport ' + server in l]
+                self.assertTrue(rules, family + ' has no inbound DHCP reply rule at all')
+                for rule in rules:
+                    self.assertNotIn(
+                        'ct state', rule,
+                        family + ' gates the DHCP reply on conntrack state, which holds only while '
+                        'the client happens to unicast: ' + rule)
+                    self.assertIn(
+                        'dport ' + client, rule,
+                        family + ' does not match the DHCP client port: ' + rule)
+
+    def testDhcpNeedsBothDirectionsFromOneFlag(self):
+        """One flag opens both halves, and for DHCP the inbound half is a real rule.
+
+        Every other service's inbound line under `outbound.<service>` is a conntrack reply path.
+        DHCP's cannot be, so `outbound.dhcp` opens an actual inbound accept - which is right, and
+        is worth pinning: splitting it into `inbound.dhcp` and `outbound.dhcp` would make enabling
+        one and not the other a way to lose an address, and nothing would say so.
+        """
+        for family, server in (('ipv4', '67'), ('ipv6', '547')):
+            lines = [l for l in open('templates/' + family + '/base.rules') if 'outbound.dhcp' in l]
+            with self.subTest(family=family):
+                self.assertTrue(any('sport ' + server in l for l in lines),
+                                family + ': no inbound half is opened by outbound.dhcp')
+                self.assertTrue(any('dport ' + server in l for l in lines),
+                                family + ': no outbound half is opened by outbound.dhcp')
+                self.assertFalse(any('inbound.dhcp' in l for l in
+                                     open('templates/' + family + '/base.rules')),
+                                 family + ': DHCP has been split across two flags, so enabling one '
+                                 'and not the other silently costs the host its address')
