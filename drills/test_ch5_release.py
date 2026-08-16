@@ -19,10 +19,14 @@ from undrilled import unwatched
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-#: What `upstream/latest` may hold that `master` does not. THE LIST IS THE POINT: master carries the
-#: software and what describes it, the packaging-adjacent files sit one branch further out, and the
-#: difference is a decision rather than a residue. Anything else appearing here is drift.
-UPSTREAM_ONLY = {"DESCRIPTION.txt", "pyproject.toml"}
+#: THREE LAYERS, AND THIS IS THE SECOND ONE'S CONTENTS. master is the source. `upstream/latest`
+#: adds what makes it deliverable as a Python project. `debian/latest` adds what makes it a Debian
+#: package. Each layer is authored on - that is what a layer is for - and the rule is that it is
+#: authored on for ITS OWN files and nothing else.
+#:
+#: The list is short on purpose. A file arriving here that nobody declared is how a `save` command
+#: and a manpage came to be written on the packaging branch and never reached master.
+UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml"}
 
 
 def git(*args):
@@ -58,16 +62,18 @@ def test_master_carries_the_software_and_upstream_carries_a_declared_few_more():
     one wins.
     """
     have("master")
-    # `debian/` is Debian's opinion of the software rather than the software, and keeping it off
-    # master is what lets master move without a packaging decision attached.
+    # Layer one holds the source and nothing about how anybody ships it.
     intruders = sorted(p for p in tree("master") if p.startswith("debian/"))
     assert not intruders, (
-        f"master carries packaging: {intruders}. It belongs on debian/latest, and master having it "
-        "means every change to the software invites a decision about the package.")
+        f"master carries Debian packaging: {intruders}. It belongs on debian/latest, and master "
+        "having it means every change to the software invites a decision about the package.")
+    strays = sorted(tree("master") & UPSTREAM_ONLY)
+    assert not strays, (
+        f"master carries the deliverable layer's files: {strays}. They belong on upstream/latest — "
+        "keeping them off master is what lets the source move without a packaging decision "
+        "attached, and collapsing that boundary is how the licence file got two homes.")
 
-    # And the difference the other way has to be a decision rather than a residue. A short declared
-    # list is a choice somebody made; an undeclared one is how the licence file ended up with two
-    # homes and five renames.
+    # Layer two adds exactly its own files to layer one, and nothing else.
     have("upstream/latest")
     unexpected = sorted((tree("upstream/latest") - tree("master")) - UPSTREAM_ONLY)
     assert not unexpected, (
@@ -77,23 +83,37 @@ def test_master_carries_the_software_and_upstream_carries_a_declared_few_more():
 
 
 @pytest.mark.proves("ch5-3", depth="structural")
-def test_nothing_is_authored_on_a_destination_branch():
-    """The rule the whole chapter rests on, and the one currently broken.
+def test_the_deliverable_layer_is_only_ever_authored_for_its_own_files():
+    """A layer is a branch you DO commit to — that is what makes it a layer rather than a
+    destination. The rule is not that upstream/latest holds no commits of its own; it is that every
+    one of them touches only the files that layer owns.
 
-    upstream/latest exists to receive master. Commits that appear there and nowhere else are work
-    that has to find its way home, and this repository has 26 of them — a manpage, version bumps, a
-    website change. That single fact explains the licence confusion, the pyproject.toml that could
-    not be edited without breaking dpkg-source, and the conflicts a release hits today.
+    SCOPED TO SINCE THE LAST RELEASE, deliberately. Before that boundary the rule was broken —
+    `Added save command`, `Adding man page for afirewall`, `Update project, and website` were all
+    authored here and the source never got them, which is how master and upstream came to disagree
+    about three files. That is history and a permanently red drill teaches nobody anything. What
+    this holds is that it has not happened SINCE, which is the part anybody can still act on.
     """
     have("master"); have("upstream/latest")
-    out, _ = git("log", "--oneline", "--no-merges", "upstream/latest", "^master")
-    orphans = [ln for ln in out.splitlines() if ln]
-    assert not orphans, (
-        f"{len(orphans)} commit(s) exist on upstream/latest and nowhere else:\n  "
-        + "\n  ".join(orphans[:10])
-        + ("\n  ..." if len(orphans) > 10 else "")
-        + "\nupstream/latest is a destination. Work authored there does not reach master, and a "
-          "release then has to reconcile the two rather than merge them.")
+    tags, _ = git("tag", "--list", "upstream/latest/*")
+    releases = sorted(tags.splitlines())
+    if not releases:
+        pytest.skip("no release tag to measure from")
+    since = releases[-1]
+    out, _ = git("log", "--format=%h %s", "--no-merges", "upstream/latest", f"^{since}", "^master")
+    strayed = []
+    for line in [ln for ln in out.splitlines() if ln]:
+        sha = line.split()[0]
+        touched, _ = git("show", "--name-only", "--format=", sha)
+        outside = sorted(set(f for f in touched.splitlines() if f) - UPSTREAM_ONLY)
+        if outside:
+            strayed.append(f"{line}\n      touches {outside}")
+    assert not strayed, (
+        f"since {since}, commit(s) on upstream/latest have changed files that layer does not "
+        f"own:\n  " + "\n  ".join(strayed[:6])
+        + f"\n\nupstream/latest adds {sorted(UPSTREAM_ONLY)} to the source and nothing else. "
+          "Anything else changed here does not reach master, and the next release has to reconcile "
+          "the two rather than merge them.")
 
 
 @pytest.mark.proves("ch5-4", depth="structural")

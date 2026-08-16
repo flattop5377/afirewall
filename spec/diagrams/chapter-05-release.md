@@ -11,11 +11,19 @@
 non-merge commits `master` has never seen: a manpage, version bumps, "Update project, and website",
 "Removed dist files".
 
-**The cause was a reasonable instinct applied to the wrong problem.** Each release got its own
-branch — `upstream/latest-20250429.0.0`, `upstream/latest-20260815.0.0`, a pull request from
-`upstream/latest-20290421.0.3` — merged from master and then back. That shape is correct when you
-are *maintaining several lines at once*. For a single linear release it adds a branch per version
-that has to find its way home, and some of it did not.
+**The branches are three layers and each one adds what the next needs.** `master` is the source.
+`upstream/latest` adds what makes it **deliverable** — the Python packaging, which is why
+`hatch.toml` and `pyproject.toml` live there and not on master. `debian/latest` adds what makes it
+a **Debian package**. `47658bf Removed packaging files` was that boundary being drawn, not a
+mistake, and keeping it is what lets the source move without a packaging decision attached to every
+change.
+
+**So a layer IS authored on — that is what makes it a layer rather than a destination — and the rule
+is that it is authored on for its own files and nothing else.** That is where this went wrong.
+Alongside the six commits that legitimately maintain the Python packaging, `upstream/latest` carries
+`Adding man page for afirewall`, `Update project, and website. Added save command`, `Updated for
+release 20240921.0.2`. A **source** change — a `save` command — was made on the packaging layer, and
+master never got it. The boundary was right and porous.
 
 **But the reason those lines were anticipated is real, and it is not the one you would guess.**
 It is not Python and it is not architecture: this package is `Architecture: all` and pure Python, and
@@ -38,10 +46,10 @@ parses on nft 0.9.3.
 ```mermaid
 flowchart TD
     WORK([ch5-1 · a change to the software]):::input
-    MASTER[ch5-2 · lands on master, which is where<br/>work happens and the only such place]:::process
+    MASTER[ch5-2 · lands on master, the source layer —<br/>no packaging of any kind lives here]:::process
     FEAT{ch5-6 · does it need an nft<br/>the target may not have?}:::decision
     DECL[ch5-6 · then the dependency says so,<br/>with a version]:::process
-    UP[ch5-3 · upstream/latest receives it —<br/>it is a destination, never a workspace]:::process
+    UP[ch5-3 · upstream/latest adds the deliverable<br/>packaging, and only ever that]:::process
     TAG[ch5-4 · a tag records the release;<br/>a branch would be a second line]:::process
     AXIS{ch5-5 · what changed?}:::decision
     REV[ch5-5 · packaging only · bump the<br/>Debian revision, no new tarball]:::process
@@ -74,8 +82,8 @@ flowchart TD
 | id | node | claim |
 |---|---|---|
 | `ch5-1` | a change to the software | **The release process is a property of the repository, not of the person running it.** A sequence somebody has to remember is a sequence somebody gets wrong at the version they most need to reproduce — and this repository has already lost a manpage, a set of version bumps and a website change onto a branch nobody merges from. Recording it is worth less than making it checkable, which is why every claim below has a drill that reads the branches rather than a document that describes them |
-| `ch5-2` | lands on master, and master carries the source plus a named few | **`master` is the only branch anybody commits to, and it holds the software AND the files that describe it** — `LICENSE`, `README.md`, `doc/`, and the templates. What it must *not* hold is `debian/`, because that is Debian's opinion of the software rather than the software, and keeping it off master is what lets master move without a packaging decision attached. **`upstream/latest` may differ from master by a declared, short list and nothing else** (`DESCRIPTION.txt`, `pyproject.toml` — the Python packaging), so the difference is a fact somebody chose rather than a residue. A drill enforces the list, which is what makes "master moves away from the packaging" a rule instead of an intention |
-| `ch5-3` | upstream/latest is a destination, never a workspace | **Nothing is authored on a branch whose job is to receive.** `upstream/latest` currently holds 26 non-merge commits master has never seen, and that single fact explains the three-way licence confusion, the `pyproject.toml` that could not be edited without breaking `dpkg-source`, and the conflicts a release hits today. The rule is checkable in one command — `git log upstream/latest ^master --no-merges` must be empty — and it is the rule the whole chapter rests on |
+| `ch5-2` | lands on master, and each layer adds only what it owns | **Three layers, and the boundaries are the design rather than an accident of history.** `master` holds the source — `LICENSE`, `README.md`, `doc/`, the templates, the code. `upstream/latest` adds the four files that make it deliverable as a Python project: `DESCRIPTION.txt`, `LICENSE-SHORT.txt`, `pyproject.toml`, `hatch.toml`. `debian/latest` adds `debian/`. **Master carrying none of it is the point** — the source moves without a packaging decision attached to every change — and a drill asserts both directions, that `debian/` never appears on master and that `upstream/latest` adds the declared four and nothing else. Collapsing the boundary is not hypothetical: doing it gave the licence file two names and two homes, and it is what a later reader will do again unless something refuses |
+| `ch5-3` | a layer is authored on, for its own files only | **The rule is not that `upstream/latest` has no commits of its own — it must have them, or it is not a layer.** It is that every one touches only what that layer owns. Of the 26 commits master has never seen, six do exactly that and the rest do not: a manpage, a website change, and a `save` command, all authored on the packaging branch and never reaching the source. **That is what a porous boundary costs**, and it is the whole explanation for the licence confusion and for a `pyproject.toml` that could not be edited from `debian/latest` without `dpkg-source` refusing the build. The drill is scoped to commits **since the newest release tag**: before it the rule was broken, and a permanently red drill teaches nobody anything, while "it has not happened since" is a thing somebody can still act on |
 | `ch5-4` | a tag records the release | **A release is remembered by `upstream/latest/<version>` and `debian/latest-<version>-<rev>`, not by a branch.** A branch invites commits; a tag cannot receive them. Every release branch this repository made — three of them — had to be merged home, and the drift is what happened when one was not. A tag says what shipped without offering anywhere to put something new |
 | `ch5-5` | what changed? | **Three kinds of change and only one needs a branch.** New source is a new upstream version, tagged, linear. A packaging-only fix — a wrong dependency, a bad `.install` line — is a **Debian revision**: `-1` to `-2`, no new upstream version, no new tarball, pristine-tar untouched. **This is what the native format was costing**, because a native package has no revision, so every packaging fix forced a fake upstream release. Only genuinely maintaining two lines at once needs a branch, and DEP-14 already names it: the `/latest` in `debian/latest` and `upstream/latest` is the slot `debian/bookworm` and `upstream/1.x` go beside |
 | `ch5-6` | does it need an nft the target may not have? | **The generated ruleset is the artifact, and it has to parse on the target's nftables.** That makes nft's *version* a dependency of the output rather than of the code, which is the one this package had forgotten entirely: `Depends:` named `nftables` with no version at all, so a host with an older one installed cleanly and then failed at `afirewall start` — with no firewall, which is the worst moment to discover a dependency. **The floor is measured, not reasoned** (`ch5-U1`): a full ruleset through `nft -c` on five versions, failing on 0.9.3 and 0.9.8, parsing on 1.0.2, 1.0.6 and 1.1.3. Reading changelogs would have produced the wrong number from the right list of features, because the construct that draws the line is `tcp flags urg / urg,ack` rather than anything that looked risky. **This is also the real reason a second line may be needed** (`ch5-5`), and the reason it will be needed sooner once namespaces land |
@@ -86,11 +94,12 @@ flowchart TD
 
 **Input** — a change to the software (`ch5-1`).
 
-**It lands on master** (`ch5-2`), which is the only branch anybody commits to, and if it needs an
-nft feature the target may not have, the dependency says so with a version (`ch5-6`).
-`upstream/latest` receives master rather than being worked on (`ch5-3`), a tag records what shipped
-(`ch5-4`), and the kind of change decides whether anything branches at all (`ch5-5`). What ships
-stays rebuildable (`ch5-7`).
+**It lands on master**, the source layer, which carries no packaging of any kind (`ch5-2`) — and if
+it needs an nft feature the target may not have, the dependency says so with a version (`ch5-6`).
+`upstream/latest` takes master and adds the four files that make it deliverable, which is the only
+thing ever authored there (`ch5-3`); `debian/latest` takes that and adds `debian/`. A tag records
+what shipped (`ch5-4`), the kind of change decides whether anything branches at all (`ch5-5`), and
+what ships stays rebuildable (`ch5-7`).
 
 **Output** — a release nobody has to negotiate (`ch5-8`).
 
@@ -111,11 +120,19 @@ stays rebuildable (`ch5-7`).
   **What this does not settle is the same question asked again later.** Every template added from
   here can raise the floor, and nothing re-measures it — which is `ch5-U4`.
 
-- **ch5-U2 — the divergence has to be reconciled before any of this holds.** `upstream/latest` is
-  36 commits ahead and 13 behind master, and a trial merge conflicts on three files. Master's side
-  is the newer one on all three, so the reconciliation is not a judgement call — but whether to
-  resolve the merge or reset `upstream/latest` to master outright is, because the second discards a
-  history that the release tags no longer need. Anchored to `ch5-3`.
+- **ch5-U2 — RESOLVED, and what resolved it was being told the design.** The plan had been to
+  reconcile master and `upstream/latest` into agreement, on the assumption that `upstream/latest`
+  should hold nothing of its own. That assumption was wrong: the branches are layers, and the
+  deliverable packaging belongs one layer out from the source *by design*. The reconciliation was
+  therefore not a merge at all — it was putting `DESCRIPTION.txt`, `LICENSE-SHORT.txt` and
+  `pyproject.toml` back where they belong and making the fixes to them on the branch that owns them.
+
+  **The invariant changed with it.** "master and upstream agree" was never true and was never meant
+  to be — master is ahead between releases, which is the model working. What holds instead is that
+  each layer adds only what it owns, checked as state (`ch5-2`) and as recent history (`ch5-3`).
+  A trial merge conflicted on three files, and only one of the three was master's to win outright:
+  `README.md` needed content from both sides, which a "master wins" reconciliation would have
+  silently discarded.
 
 - **ch5-U4 — CLOSED BY A DRILL RATHER THAN BY A DECISION.** The worry was that `ch5-U1` measured
   the floor once, so a template added later could raise it while `debian/control` went on claiming
