@@ -254,6 +254,24 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   accept and an `accept` in one does not skip the others. What is not settled is the unit ordering
   itself, which has to be read on a host. Anchored to `ch1-1`.
 
+- **ch1-U11 — installing a firewall does not switch one on, and nobody has decided whether it
+  should.** The package ships no `postinst`, so a fresh install saves no ruleset. `restore` then has
+  nothing to restore, and since `ch1-10` it refuses rather than rebuilding — correct in itself, but
+  it means installing this package could mark `netfilter-persistent.service` failed on a host that
+  had never been configured. It does not today, only because that unit ships disabled: `a host` had to
+  be enabled by hand on 2026-08-16, and until somebody does, the plugin is never invoked and the
+  question never arises. **That is a reprieve rather than an answer**, and the shape of the answer is
+  a policy question this package cannot settle from its own side. A `postinst` running `regenerate`
+  would mean installing a firewall gets you a firewall, immediately and at every boot, which is
+  arguably what the words mean — and the shipped baseline is built for exactly that, since it
+  enables `inbound.ssh` and the outbound half a host needs rather than starting from everything
+  closed. Against it: this package is installed by strangers whose hosts run services the baseline
+  knows nothing about, and a firewall that switches itself on during `apt install` is a firewall
+  that took a decision on their behalf. The estate that wrote it does not need one either way — its
+  configuration manager installs, regenerates and enables explicitly — so the case for choosing is
+  entirely about the stranger, which is the reader this chapter already says defaults are for.
+  Anchored to `ch1-10`.
+
 - **ch1-U6 — the package claims pure nft and ships nothing that keeps a public installation pure.**
   fail2ban's Debian default `banaction` is iptables, so a stranger who installs afirewall and
   fail2ban gets exactly the mixture this package exists to leave. It *functions* — a ban lands in
