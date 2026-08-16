@@ -33,7 +33,14 @@ because **what separates them is who gets refused when the limit bites** (`ch1-5
 alongside the `orport` and `dirport` rules it now agrees with — the one behavioural change in the
 pass, made while the firewall is enabled on no host.
 
-**Two things bound every answer here and are not open to trade.** afirewall is **pure nft** — the
+**This package is installed by strangers, and that changes what a default is for.** The operator is
+one consumer of afirewall and not the audience: a default tuned to what these hosts happen to run
+is a default that fails somebody else silently. It is why ICMP is limited rather than closed —
+crippling a stranger's ability to do network discovery or troubleshoot their own host is a worse
+failure than admitting some noise — and it is the standing reason a posture argued from this
+deployment's traffic has to say so.
+
+**Two more things bound every answer here and are not open to trade.** afirewall is **pure nft** — the
 deployment is leaving iptables deliberately, which is why fwknop was rejected for depending on it. And
 it must stay **administrable through ansible**: a host's ruleset follows from the groups the host is
 in, which a fleet delivers by restoring the packaged `afirewall.conf` at the start of a converge
@@ -111,21 +118,13 @@ ruleset is pure nft that loads completely or is not applied (`ch1-7`).
   legitimate rate actually refuses abuse without refusing use is a claim about traffic, and the only
   honest way to settle it is to generate the load. Anchored to `ch1-5`.
 
-- **ch1-U3 — the IPv4 side rate-limits the signal path-MTU discovery runs on, and the IPv6 side
-  does not.** **The posture is settled and is not the open part.** ICMP has many uses and this is a
-  package other people install, so the default must not cripple network discovery or
-  troubleshooting: allow it from anywhere and *limit* it, which is what the rules do and what long
-  IPv4 practice supports. The limit is generous against real diagnostic traffic — `ping` sends
-  1/second, and a traceroute's `time-exceeded` replies each come from a *different* router, so a
-  per-source bucket of 10/second is never reached by a legitimate operator. It is reached by
-  `ping -f`, which is the traffic it is for.
-
-  What is still open is one message rather than the posture. `fragmentation-needed` is a *subtype*
-  of `destination-unreachable`, and the IPv4 rules limit `destination-unreachable` as a whole — so
-  the signal a black-holed TCP connection depends on shares a bucket with every diagnostic message.
-  **The IPv6 side already makes the carve-out**, accepting `packet-too-big` ahead of and outside the
-  limit, so the two families disagree about a message that is not a diagnostic at all. Mirroring the
-  IPv6 decision is one rule and no change of posture. Anchored to `ch1-5`.
+- **ch1-U7 — three ICMP replies now have nothing that could have asked for them.**
+  `timestamp-request`, `info-request` and `address-mask-request` are gone from both IPv4 chains,
+  but `timestamp-reply`, `info-reply` and `address-mask-reply` are still accepted and still take a
+  share of the budget. A reply is only ever an answer to a request this host sent, and this host no
+  longer sends them, so what remains is three rules that can only ever admit unsolicited traffic.
+  They are a one-line removal and were left because they were not in what was asked for. Anchored
+  to `ch1-1`.
 
 - **ch1-U4 — the bacula templates have no traffic to argue from.** No play in a fleet enables any
   bacula flag; the operator backs up with the backup tool. Their postures are recorded as what the rules do

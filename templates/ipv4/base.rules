@@ -124,9 +124,29 @@ table ip a-firewall-inbound-ipv4 {
   #
   # Enforced because ICMP carries no service: the collateral of a wrong drop is diagnostics
   # rather than a counterparty, so nothing here fails the replaceability test the service
-  # templates apply. What it does cost is recorded as ch1-U3.
+  # templates apply.
+  #
+  # LIMITED RATHER THAN CLOSED, AND THAT IS A DECISION ABOUT WHO INSTALLS THIS. Other people
+  # run this package, and a default that cripples network discovery or troubleshooting is a
+  # worse default than one that admits some noise. The budget is generous against real work -
+  # `ping` sends 1/second, and a traceroute's `time-exceeded` replies each arrive from a
+  # DIFFERENT router, so a per-source bucket of 10/second is not reached by an operator
+  # diagnosing something. It is reached by `ping -f`, which is the traffic it is for.
+  #
+  # The message that must not share this budget is carved out below.
   #
   chain VALID_ICMP {
+    ##
+    # PATH-MTU DISCOVERY IS NOT A DIAGNOSTIC, so it is not in the bucket the diagnostics share.
+    #
+    # `fragmentation-needed` is a code of `destination-unreachable`, and the rule below limits
+    # that type as a whole - so without this line the one message a black-holed TCP connection
+    # depends on competes for a budget with every ping and traceroute reply from the same host.
+    # The IPv6 side has always accepted `packet-too-big` ahead of its limit for this reason; this
+    # is that decision, brought across.
+    #
+    icmp type destination-unreachable icmp code frag-needed accept
+
     icmp type echo-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type source-quench update @icmp_rate_limit { ip saddr limit rate 10/second } accept
@@ -134,11 +154,8 @@ table ip a-firewall-inbound-ipv4 {
     icmp type echo-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type timestamp-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type info-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type address-mask-reply update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip saddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip saddr limit rate 10/second } accept
@@ -447,6 +464,17 @@ table ip a-firewall-outbound-ipv4 {
   # this host picked, so there is no forged source to aim it with. Enforced freely.
   #
   chain VALID_ICMP {
+    ##
+    # PATH-MTU DISCOVERY IS NOT A DIAGNOSTIC, so it is not in the bucket the diagnostics share.
+    #
+    # `fragmentation-needed` is a code of `destination-unreachable`, and the rule below limits
+    # that type as a whole - so without this line this host's own report that a packet was too
+    # big competes for a budget with every diagnostic it sends to the same peer.
+    # The IPv6 side has always accepted `packet-too-big` ahead of its limit for this reason; this
+    # is that decision, brought across.
+    #
+    icmp type destination-unreachable icmp code frag-needed accept
+
     icmp type echo-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type destination-unreachable update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type source-quench update @icmp_rate_limit { ip daddr limit rate 10/second } accept
@@ -454,11 +482,8 @@ table ip a-firewall-outbound-ipv4 {
     icmp type echo-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type time-exceeded update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type parameter-problem update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type timestamp-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type timestamp-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type info-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type info-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
-    icmp type address-mask-request update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type address-mask-reply update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-advertisement update @icmp_rate_limit { ip daddr limit rate 10/second } accept
     icmp type router-solicitation update @icmp_rate_limit { ip daddr limit rate 10/second } accept
