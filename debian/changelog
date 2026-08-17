@@ -1,3 +1,45 @@
+afirewall (20260817.0.0-1) unstable; urgency=medium
+
+  * THREE SERVICES WERE DEAD OR HALF-DEAD AND ARE NOW FIXED. inbound.tcp2194
+    and inbound.tcp8000 accepted connections they could never answer, because
+    the rule admitting their reply was guarded by a flag that did not exist or
+    was missing altogether; outbound.udp1514's chain was rendered and never
+    reached, because nothing jumped to it. If you had any of these enabled they
+    did not work. They do now.
+  * IPv6 anti-spoofing ran behind connection tracking rather than ahead of it,
+    so a forged source was tracked before it was dropped. IPv6 had no fragment
+    handling at all - RFC 8200 removed fragmentation by ROUTERS, not by the
+    sender - and the IPv4 fragment chain sat behind the kernel's own
+    defragmentation, where it could never match. All three are corrected.
+  * afirewall add-service raised NameError on every invocation and has never
+    worked in any released version. It works.
+  * NEW: afirewall enable <flag> and afirewall disable <flag>. They set one
+    flag, refuse a flag nothing declares - so a misspelling is an error rather
+    than a line that persists and governs nothing - and print one JSON object
+    saying whether anything actually changed. A configuration manager can gate
+    a single reload on that and leave a converged host quiet. --dry-run does
+    everything except the write, validation included, for check runs.
+    NOTHING REACHES THE KERNEL UNTIL afirewall reload.
+  * NEW: forwarded services, for traffic this host routes to a namespace or
+    another machine rather than terminating itself:
+    afirewall add-service app --forward --tcp 8080 --to 10.99.0.2 ...
+    ENABLING THE FIRST ONE IS A ONE-WAY DOOR. Until then this host has no chain
+    at the forward hook and passes everything it routes; afterwards a chain
+    exists there with policy drop, and anything else being forwarded - a
+    container runtime's published ports above all - is refused unless it is
+    declared too. A host that declares none is completely unaffected. Reaching
+    a private range by address translation still needs a nat table, which this
+    package does not emit.
+  * Services are now records in /usr/share/afirewall/services.toml rather than
+    sixty-six template files, which is what makes a service's rules, the rule
+    reaching them and the rule admitting its reply come from one declaration
+    instead of four hand-written places. Records in /etc/afirewall/services.toml
+    are MERGED over the shipped ones by direction and name, so declaring a
+    service of your own does not stop the package's list arriving with future
+    upgrades. A template under /etc still overrides the service it names.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Mon, 17 Aug 2026 14:28:49 -0600
+
 afirewall (20260816.3.0-1) unstable; urgency=medium
 
   * A host came up with no firewall after a reboot and reported that it had
