@@ -26,8 +26,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #:
 #: The list is short on purpose. A file arriving here that nobody declared is how a `save` command
 #: and a manpage came to be written on the packaging branch and never reached master.
-UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml",
-                 "requirements-build.txt"}
+#: EMPTY, AND THAT IS THE CLAIM RATHER THAN AN OVERSIGHT (2026-08-17). This held the files that
+#: made afirewall deliverable as a Python project, and that deliverable was retired: nothing ever
+#: built a wheel, `debian/rules` does not select pybuild, the built .deb has no dist-packages, and
+#: almost everything this package IS - a conffile, a netfilter-persistent plugin, templates under
+#: /usr/share, a manpage - lives where a wheel cannot put it.
+#:
+#: upstream/latest survives because gbp needs it: `debian/gbp.conf` names it as the upstream branch,
+#: the orig tarball is built from it and pristine-tar regenerates that tarball byte-identically. So
+#: the layer's job is to BE the source at a tag, and a layer that adds nothing is exactly what that
+#: job wants. The set stays as the mechanism, at zero, so declaring something later is one edit
+#: rather than a rewrite.
+UPSTREAM_ONLY = set()
 
 
 def git(*args):
@@ -118,13 +128,16 @@ def test_master_carries_the_software_and_upstream_carries_a_declared_few_more():
         "keeping them off master is what lets the source move without a packaging decision "
         "attached, and collapsing that boundary is how the licence file got two homes.")
 
-    # Layer two adds exactly its own files to layer one, and nothing else.
+    # Layer two adds NOTHING to layer one, which is what its job asks of it: gbp builds the orig
+    # tarball from this branch, so anything here that master does not have ships in a tarball the
+    # source cannot account for.
     have("upstream/latest")
     unexpected = sorted((tree("upstream/latest") - tree("master")) - UPSTREAM_ONLY)
     assert not unexpected, (
-        f"upstream/latest holds files master does not and that nobody declared: {unexpected}. "
-        f"The declared list is {sorted(UPSTREAM_ONLY)} — either add to it deliberately, or the "
-        "file belongs on master.")
+        f"upstream/latest holds files master does not: {unexpected}. That branch is the source at "
+        "a tag - gbp builds the orig tarball from it - so a file here and not on master ships in a "
+        "tarball the source cannot account for. Put it on master, or declare it in UPSTREAM_ONLY "
+        "deliberately.")
 
 
 @pytest.mark.proves("ch5-3", depth="structural")
