@@ -36,6 +36,24 @@ obvious answer and is a global accept wearing the word "configured"; an interfac
 plumbing rather than a service, and `ch1-5` cannot ask who is refused when a limit bites if the
 thing being described is a veth.
 
+**A second reading was taken on the translated case, and it made the remaining work smaller and
+more separable than "add NAT" suggests.** Same three namespaces, but the outside given no route to
+the private range, so it dials the host's own address and a `dnat` rule sends it on.
+
+**The rules this chapter already derives are correct under translation, unchanged.** DNAT runs at
+prerouting `-100` and the crossing chain at forward `20`, so the filter chain sees the address the
+packet is *going* to rather than the one it arrived for. Measured by counting both: `ip daddr
+10.99.0.2` matched **4 packets**, `ip daddr 100.64.0.1` matched **0**. Nothing collides either —
+the full order on this host is `FRAGMENTS` (-450), conntrack defrag (-400), conntrack (-200),
+`dstnat` (-100), the forward filter (20), `srcnat` (100), so every sanity chain runs before any
+translation. **Address translation is additive to this chapter rather than a revision of it.**
+
+**And the crossing pair is one-directional, which was not obvious until it was tried.** With the
+inbound crossing declared and nothing else, the service **could not reach out at all**. Traffic a
+namespace *originates* is a different flow needing its own two rules, and admitting it is a much
+broader grant than admitting a port — so it is `ch4-U6` rather than something `to` should quietly
+imply.
+
 **The cost is a cliff, and it is stated rather than smoothed.** With nothing declared this package
 emits no chain at `forward`, so every host that forwards today is untouched — that is `ch4-6`, and
 it is measured rather than intended. The moment one forwarded service is enabled, a chain appears
@@ -56,7 +74,10 @@ flowchart TD
     BREAK[ch4-6 · a host that declares nothing<br/>forwards exactly as it did]:::process
     CLIFF([ch4-9 · and the first declaration stops<br/>everything else this host forwarded]):::bad
     OUT([ch4-7 · a namespaced service is behind<br/>the firewall, not beside it]):::output
-    U4[ch4-U4 · a private namespace needs NAT,<br/>and this package has no nat table]:::unknown
+    U4[ch4-U4 · a translated namespace needs a<br/>second KIND of table]:::unknown
+    U6[ch4-U6 · a namespace originating traffic<br/>is a separate, wider grant]:::unknown
+    U7[ch4-U7 · with nat loaded, `stop` stops<br/>meaning what it means today]:::unknown
+    U8[ch4-U8 · another nat manager does not<br/>collide loudly, it resolves]:::unknown
 
     NS --> OPTIN
     OPTIN -->|nothing is declared| BREAK
@@ -68,6 +89,9 @@ flowchart TD
     BREAK --> OUT
     HOOK -.-> CLIFF
     DECL -.-> U4
+    PAIR -.-> U6
+    HOOK -.-> U7
+    CLIFF -.-> U8
 
     classDef input fill:#eef0ee,stroke:#52514e,color:#0b0b0b;
     classDef process fill:#e9eef5,stroke:#2a78d6,color:#0b0b0b;
@@ -116,14 +140,45 @@ declaration is that everything this host used to forward silently now does not (
 
 ## Open unknowns
 
-- **ch4-U4 — a namespace on a private range needs address translation, and this package has no
-  `nat` table at all.** The reading was taken on a *routed* namespace: the outside had a route to
-  `10.99.0.0/24` and the service answered on its own address. That is a real deployment and it is
-  not the common one — a container on a private bridge reached from the internet needs `DNAT` on the
-  way in and masquerade on the way out, which is a table type afirewall has never emitted. Adding
-  one is not a rule change; it is a second kind of ruleset, with its own hooks, its own ordering
-  against the filter chains, and its own failure modes. Until it exists this chapter covers the
-  routed case and says so, rather than covering the common case badly. Anchored to `ch4-8`.
+- **ch4-U4 — the translated case needs a second KIND of table, and that is the whole of what is
+  left of it.** This package has only ever emitted `type filter`; a namespace on a private range
+  needs `type nat` with a `dstnat` chain on the way in and an `srcnat` chain on the way out. The
+  reading above removed the part that looked hardest — the filter rules do not change — and leaves
+  three concrete things. **`OWNED_TABLES` grows**, or `stop` leaves a table loaded. **A record has
+  to say what the outside dials**: `to` says where traffic goes and DNAT also needs the address and
+  port it arrived for, which is the external address this package already discovers, except where a
+  service is published on a different external port than its internal one and nothing has decided
+  whether that is in scope. **And masquerade needs a source range**, not just the external device —
+  `oifname <ext> ip saddr 10.99.0.0/24 masquerade` — and the package has never known what sits
+  behind it. One implementation note, learned by hitting it: `dnat` is a reserved word in nft and
+  cannot be used as a chain name. Anchored to `ch4-8`.
+
+- **ch4-U6 — a namespace originating traffic is a separate grant, and a much wider one.** Measured:
+  with the inbound crossing declared and nothing else, the service could not open a connection
+  outward. It needs its own pair — `ip saddr <to> ct state new,established accept` and `ip daddr
+  <to> ct state established accept` — and that is not a detail of `ch4-U4`, it is a posture
+  decision that stands whether or not translation is ever built. **"This port may be reached" and
+  "this namespace may originate anything" are different sentences**, and `ch1-1` is unforgiving
+  precisely so that the second is never implied by the first. Whether it is a field on the record,
+  a separate direction, or a set of destinations the namespace may reach is undecided; what is
+  decided is that `to` must not quietly mean both. Anchored to `ch4-4`.
+
+- **ch4-U7 — with nat tables loaded, `stop` stops meaning what it means today.** Right now `stop`
+  removes filtering and the host still routes: a smaller firewall, not a broken host. Remove a
+  translation table and every published service stops resolving at once, and a host may begin
+  putting un-masqueraded private source addresses on the wire — which is not a weaker posture but a
+  different and noisier failure. The verb is netfilter-persistent's and arrives from the system, so
+  this is not a question anybody gets asked at the time. Whether `stop` should refuse while
+  translation is loaded, tear both down together, or keep the nat tables and drop only the filters
+  is undecided, and it is worth deciding **before** the tables exist rather than after. Anchored to
+  `ch4-2`.
+
+- **ch4-U8 — a host with another nat manager already has DNAT rules, and first match wins.** A
+  container runtime writes its own translation at the same hook this would use. `ch4-9` covers the
+  filtering half of that collision and says the operator must choose; the translating half is
+  worse, because two managers do not produce a refusal but a *resolution* — a service silently
+  pointing at the wrong container rather than at nothing. This is `ch1-7`'s "two front ends fight"
+  in the one place where the losing outcome is quiet. Anchored to `ch4-9`.
 
 - **ch4-U5 — nothing decides what a forwarded service's limit means.** `ch1-5` asks who is refused
   when a limit bites, and for a forwarded service the answer has an extra party in it: the host
