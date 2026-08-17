@@ -1,3 +1,26 @@
+afirewall (20260817.2.0-1) unstable; urgency=medium
+
+  * UPGRADING FROM 20260817.0.0-1 OR 20260817.1.0-1 IN PLACE DID NOT WORK, and
+    this fixes it. Those releases moved the fragment chain to a new hook
+    priority, and `afirewall regenerate` validates the new ruleset against the
+    kernel as it is - so the changed chain was checked against the copy of
+    itself already loaded and refused with `Chain "FRAGMENTS" already exists
+    ... with different declaration`. The host kept its old firewall, correctly
+    and loudly, but the package and the running rules then disagreed with
+    nothing to say so. Any host in that state is fixed by installing this and
+    running `afirewall reload`.
+  * The generated ruleset now replaces this package's tables in a single nft
+    transaction rather than deleting them and rebuilding. That removes a window
+    in which the host had no firewall at all - short on a good run, and
+    permanent on a bad one, because a load that failed after the teardown left
+    nothing behind. A ruleset that fails to load now leaves the previous one in
+    place.
+  * A forward table left behind by a host that used to forward something and no
+    longer does is now removed by the next reload. Nothing short of `afirewall
+    stop` removed it before.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Mon, 17 Aug 2026 16:38:01 -0600
+
 afirewall (20260817.1.0-1) unstable; urgency=medium
 
   * NEW: afirewall counters. What the sanity chains have actually stopped -
