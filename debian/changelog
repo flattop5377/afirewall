@@ -1,3 +1,17 @@
+afirewall (20260817.3.0-1) unstable; urgency=medium
+
+  * A HOST COULD NOT TALK TO ITSELF, and this fixes it. Loopback traffic
+    crosses the input and output hooks like anything else, both of which
+    default to drop, and nothing accepted `lo` - so any service bound to
+    127.0.0.1 or ::1 on a port no flag opens was unreachable FROM ITS OWN
+    HOST. A loopback-only database, a local mail submission socket, a metrics
+    endpoint on 127.0.0.1: all refused, with nothing in the configuration to
+    suggest they would be. This has been true for the whole life of the
+    package. If you are running it today, check what your host binds to
+    loopback before assuming you were unaffected.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Mon, 17 Aug 2026 17:09:45 -0600
+
 afirewall (20260817.2.0-1) unstable; urgency=medium
 
   * UPGRADING FROM 20260817.0.0-1 OR 20260817.1.0-1 IN PLACE DID NOT WORK, and
