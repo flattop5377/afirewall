@@ -1,10 +1,8 @@
-# BOTH LAYERS MAINTAIN THIS FILE AND THEY DISAGREED. upstream/latest bumps the build tooling and
-# master adds what the software imports, so a release merge conflicts here every time either moves.
-# Resolved by taking the newer pin of each and the union of the two sets - which is what both sides
-# meant - and recorded because "take one side" would have silently dropped jinja2 or downgraded
-# build on alternate releases.
-build==1.2.2.post1
-packaging==25.0
-pyproject_hooks==1.2.0
+# WHAT THE SOFTWARE IMPORTS AND WHAT ITS DRILLS NEED, and nothing about how anybody ships it.
+#
+# The build tooling that consumes pyproject.toml and hatch.toml lives on upstream/latest in
+# requirements-build.txt, because those four files do. Both sets shared this filename until
+# 2026-08-17 and the two layers' copies had drifted to different pins of the same three tools -
+# a merge conflict on every release, and neither copy authoritative for the other's half.
 jinja2==3.1.5
 scapy==2.6.1

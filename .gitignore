@@ -1,6 +1,5 @@
 generated/
 *.swp
-requirements.txt
 ipv4.nft
 ipv6.nft
 

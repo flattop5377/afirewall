@@ -1,0 +1,12 @@
+# WHAT BUILDS THE PYTHON DELIVERABLE, and it lives on this layer because the four files it
+# consumes do — pyproject.toml and hatch.toml are upstream/latest's, and so are the tools that
+# read them.
+#
+# It is a separate file from requirements.txt on purpose. Both sets shared that filename until
+# 2026-08-17: master pinned what the software imports, this layer pinned these three, and neither
+# copy was authoritative for the other's half. They drifted to different pins of the same tools and
+# conflicted on the release that finally moved both. One fact, one file, one home — and this one is
+# declared in UPSTREAM_ONLY so a drill refuses it on master.
+build==1.2.2.post1
+packaging==25.0
+pyproject_hooks==1.2.0
