@@ -1,5 +1,8 @@
-build==1.2.2
-packaging==24.1
-pyproject_hooks==1.1.0
+# WHAT THE SOFTWARE IMPORTS AND WHAT ITS DRILLS NEED, and nothing about how anybody ships it.
+#
+# The build tooling that consumes pyproject.toml and hatch.toml lives on upstream/latest in
+# requirements-build.txt, because those four files do. Both sets shared this filename until
+# 2026-08-17 and the two layers' copies had drifted to different pins of the same three tools -
+# a merge conflict on every release, and neither copy authoritative for the other's half.
 jinja2==3.1.5
 scapy==2.6.1

@@ -1,4 +1,4 @@
-.TH afirewall 8 "16 Aug 2026" "20260816.2.0" "afirewall manual"
+.TH afirewall 8 "17 Aug 2026" "20260817.0.0" "afirewall manual"
 
 .SH NAME
 afirewall \- A pure NetFilter Firewall wrapper for Linux
@@ -17,11 +17,19 @@ afirewall uses netfilter to deny by default all inbound and outbound network tra
 The firewall's configuration file defaults to /etc/afirewall/afirewall.conf where individual services can be enabled.  The configuration file uses a syntax that is easy to read for human and also update / parse with Ansible.
 
 .PP
-Templates and lists are shipped by the package in \fI/usr/share/afirewall/templates\fR and
-\fI/usr/share/afirewall/lists\fR, and are replaced on upgrade without asking.  A file of the same
-name under \fI/etc/afirewall\fR takes precedence, so an override survives an upgrade while
-everything you did not override moves forward with the package.  Please suggest services you would
-like added by opening an issue.
+Every service the package knows is a record in \fI/usr/share/afirewall/services.toml\fR, which
+carries its ports, its limit posture and the argument for that posture.  The rules for a service,
+the rule that reaches them, and the rule admitting its reply are all derived from that one record,
+so a service is declared once rather than written in four places.  Records under
+\fI/etc/afirewall/services.toml\fR are MERGED over the shipped ones by direction and name, so
+adding a service of your own does not stop the package's list arriving with upgrades.
+
+.PP
+Templates and lists are shipped in \fI/usr/share/afirewall/templates\fR and
+\fI/usr/share/afirewall/lists\fR and are replaced on upgrade without asking.  A file of the same
+name under \fI/etc/afirewall\fR takes precedence.  A service template is now the exception rather
+than the rule: it is for a shape a record cannot say, and the package ships two.  Please suggest
+services you would like added by opening an issue.
 
 .PP
 The generated ruleset is written to \fI/var/lib/afirewall\fR.  It is derived from the configuration
@@ -50,19 +58,46 @@ whatever is loaded alone.
 rebuild the ruleset and write it down without loading it
 
 .OP "stop, flush"
-stop the firewall restoring the netfilter default (which is probably to allow all traffic)
+stop the firewall restoring the netfilter default (which is probably to allow all traffic).  This
+deletes exactly the tables afirewall owns - the inbound and outbound pair in each family, and the
+forward pair where something forwarded is enabled - and never flushes the ruleset, so rules another
+tool put there are left alone
 
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall
 
-.OP "add-service NAME"
-writes a new rules template for a service the package does not ship, in both address families, and
-adds its key to the configuration file disabled.  Requires \-\-inbound or \-\-outbound, at least one
-\-\-tcp or \-\-udp port, and \-\-posture with \-\-because.  This is the one command that needs no
-root: it writes into the template tree and never touches the kernel.
+.OP "enable FLAG, disable FLAG"
+set one flag in the configuration and report what actually happened, as one JSON object on standard
+output: \fB{"changed": true, "flag": "inbound.smtp", "was": "disable", "now": "enable"}\fR.  A flag
+nothing declares is refused, so a misspelling is an error rather than a line that persists, survives
+every reload and governs nothing.  The exit status means success and nothing else - \fIchanged\fR is
+in the output, so \fBafirewall enable x && ...\fR still works on a host that is already configured.
+These edit the configuration only; NOTHING REACHES THE KERNEL UNTIL \fBreload\fR.  Neither needs
+root.
 
-.OP "\-\-inbound, \-\-outbound"
-add-service: whether the host answers on these ports or reaches out on them
+.OP "\-\-dry-run"
+enable/disable: do everything except the write, validation included, and report what would have
+changed.  This is what a configuration manager's check mode should call, with the task allowed to
+run - a command that is skipped returns success it did not earn.
+
+.OP "add-service NAME"
+declares a service the package does not ship, as a record in \fI/etc/afirewall/services.toml\fR, and
+adds its key to the configuration file disabled.  Requires \-\-inbound, \-\-outbound or
+\-\-forward, at least one \-\-tcp or \-\-udp port, and \-\-posture with \-\-because.  Needs no
+root: it writes a record and never touches the kernel.
+
+.OP "\-\-inbound, \-\-outbound, \-\-forward"
+add-service: whether the host answers on these ports, reaches out on them, or forwards them
+somewhere else
+
+.OP "\-\-to ADDRESS"
+add-service: where a forwarded service actually runs.  Required with \-\-forward and meaningless
+without it.  THE FIRST FORWARDED SERVICE YOU ENABLE IS A ONE-WAY DOOR: until then this host has no
+chain at the forward hook and passes everything it routes, and afterwards a chain exists there with
+\fBpolicy drop\fR, so anything else being forwarded - a container runtime's published ports above
+all - is refused unless it is declared too.  \fBenable\fR says so when you cross it.  The
+destination must be one this host can already route to; a private range reached by translation
+needs a \fBnat\fR table, which this package does not emit.
 
 .OP "\-\-tcp PORT, \-\-udp PORT"
 add-service: a port the service uses.  Repeatable, and both may be given, because a service is not always one port

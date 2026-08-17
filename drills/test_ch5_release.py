@@ -26,7 +26,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #:
 #: The list is short on purpose. A file arriving here that nobody declared is how a `save` command
 #: and a manpage came to be written on the packaging branch and never reached master.
-UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml"}
+UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml",
+                 "requirements-build.txt"}
 
 
 def git(*args):
@@ -158,6 +159,38 @@ def test_the_deliverable_layer_is_only_ever_authored_for_its_own_files():
         + f"\n\nupstream/latest adds {sorted(UPSTREAM_ONLY)} to the source and nothing else. "
           "Anything else changed here does not reach master, and the next release has to reconcile "
           "the two rather than merge them.")
+
+
+@pytest.mark.proves("ch5-3", depth="structural")
+def test_no_shared_file_differs_between_the_layers():
+    """The state the drill above cannot see, and the reason it is a SECOND test rather than a
+    stricter first one.
+
+    `test_the_deliverable_layer_is_only_ever_authored_for_its_own_files` asks whether anybody has
+    strayed SINCE the last release, which is right for commits and blind to what straying already
+    left behind — and every release resets that boundary, so a violation that survives one cut
+    becomes permanently invisible. `requirements.txt` was authored on upstream/latest in April 2025,
+    fell behind the boundary, and sat diverged for sixteen months until both layers moved in the
+    same release and it conflicted.
+
+    THIS ASKS ABOUT NOW INSTEAD OF ABOUT HISTORY. A file the layers disagree about is a merge
+    conflict waiting for the next release, whenever it was created and whoever created it, and a
+    question about the present cannot be aged out.
+
+    It is not the same claim as the one above wearing a different scope: that one is about
+    discipline and this one is about state, and a repository can pass either while failing the
+    other. Both cite ch5-3 because a layer that only authors its own files and a layer whose shared
+    files match are the two halves of one boundary being real.
+    """
+    have("master"); have("upstream/latest")
+    out, _ = git("diff", "--name-only", "master", "upstream/latest")
+    diverged = sorted(f for f in out.splitlines() if f and f not in UPSTREAM_ONLY)
+    assert not diverged, (
+        f"master and upstream/latest disagree about {len(diverged)} file(s) that neither layer "
+        f"owns exclusively:\n  " + "\n  ".join(diverged)
+        + f"\n\nOnly {sorted(UPSTREAM_ONLY)} may differ. Anything else here will conflict at the "
+          "next release that touches it — decide which layer owns it and make the other match, or "
+          "declare it above if it genuinely belongs to the deliverable layer alone.")
 
 
 @pytest.mark.proves("ch5-4", depth="structural")
