@@ -15,6 +15,7 @@ consistency of the set.
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -186,9 +187,15 @@ def test_nothing_reaches_for_iptables():
     citation from a dependency produces exactly the kind of finding this repository spends its time
     disproving, so comments are stripped before the search.
     """
+    NOT_THE_PACKAGE = {".git", "__pycache__", "drills", "spec", ".venv"}
+    # `.venv` IS SOMEBODY'S SITE-PACKAGES AND NOT THIS PACKAGE. The README tells a developer to
+    # create it right here, so this drill was always one `pip install` away from reporting a
+    # dependency's source as afirewall reaching for iptables — and on 2026-08-17 adding scapy did
+    # exactly that. What it found was a library's comment-free mention of a tool this package does
+    # not call, which is the same false finding the docstring above records having fixed once.
     reaching = []
     for path in sorted(ROOT.rglob("*")):
-        if path.is_dir() or {".git", "__pycache__", "drills", "spec"} & set(path.parts):
+        if path.is_dir() or NOT_THE_PACKAGE & set(path.parts):
             continue
         if path.suffix not in (".py", ".rules", ".conf", ".sh") and path.name != "afirewall":
             continue
@@ -413,3 +420,40 @@ def test_a_rebooted_host_comes_up_with_its_firewall():
                         "/var/lib/afirewall/ipv4.nft` and all four tables were present, with "
                         "wireguard, the alerter, apt and syslog all working through them. "
                         "Automating it needs the a host fixture this repository keeps deferring")
+
+
+LAB = ROOT / "tools" / "lab.py"
+
+
+@pytest.mark.proves("ch1-11", depth="integration")
+def test_every_counter_moves_for_the_traffic_that_names_it():
+    """The counters, read against traffic sent on purpose rather than against whatever arrived.
+
+    THIS IS THE DRILL `ch1-9` NEEDED AND DID NOT HAVE. Everything above it reads templates, so it
+    settles the shape of a rule and never whether the rule matches anything. That gap is what let
+    three defects live under a PROVEN claim until 2026-08-17: a chain behind conntrack, a chain
+    that did not exist in one family, and a chain behind `nf_defrag` whose counter could not move.
+
+    It runs the real program against the working tree's templates inside a network namespace, so
+    what is under test is this checkout rather than whatever package the machine has installed.
+    Skipping without root is honest — the lab creates namespaces and loads a ruleset, and neither
+    is available to a normal user. A skip here means nobody has shown the counters fire, which is
+    the same thing `ch1-9` says about a counter that reads zero.
+    """
+    if os.geteuid() != 0:
+        pytest.skip("the lab creates network namespaces and loads a ruleset — run the suite as "
+                    "root, or `sudo python3 tools/lab.py` on its own")
+    if not shutil.which("nft"):
+        pytest.skip("nft is not on PATH, so no ruleset can be loaded to fire anything at")
+
+    done = subprocess.run([sys.executable, str(LAB)], capture_output=True, text=True, timeout=300)
+    # 2 IS "THIS MACHINE CANNOT ASK", WHICH IS A SKIP AND NOT A RED. Under `plumb board` this runs
+    # from the repository's .venv, which carries jinja2 and no scapy — so the first version sent
+    # nothing, read eight zero counters and reported eight broken rules against a firewall that
+    # was working. The exit code is what keeps a harness fault from being read as a finding.
+    if done.returncode == 2:
+        pytest.skip(done.stderr.strip())
+    assert done.returncode == 0, (
+        "a sanity chain did not count the traffic that names it. Every packet on that wire was "
+        f"sent by the lab, so a counter that did not move is the rule's fault:\n{done.stdout}\n"
+        f"{done.stderr}")
