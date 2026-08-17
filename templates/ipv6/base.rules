@@ -195,8 +195,13 @@ table ip6 a-firewall-inbound-ipv6 {
   #
   # Reference:
   #   https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
+  # `raw`, NOT `mangle`, and it was mangle from the genesis commit until 2026-08-17. ch1-9 claims
+  # these chains run at priority raw, and for ipv6 that claim was simply false - mangle is -150,
+  # behind conntrack at -200, so a forged source got a conntrack entry created for it before this
+  # chain dropped it. The v4 template argues the priority explicitly and this one said "see the
+  # ipv4 template for why" while using a different number.
   chain SPOOFING {
-    type filter hook input priority mangle; policy accept;
+    type filter hook input priority raw; policy accept;
 
     ##
     # Qualified by the external device - see the ipv4 template for why.
@@ -310,6 +315,42 @@ table ip6 a-firewall-inbound-ipv6 {
       # Drop conntrack segments with INVALID state
       # https://wiki.nftables.org/wiki-nftables/index.php/Matching_connection_tracking_stateful_metainformation
       ct state invalid counter drop
+  }
+
+  # Count the number of fragmented packets dropped
+  counter NUMBER_OF_FRAGMENTS_DROPPED {
+  }
+
+  ##
+  # IPV6 FRAGMENTS ARE A THING, and this chain did not exist until 2026-08-17. What IPv6 removed
+  # is fragmentation BY ROUTERS - RFC 8200 s4.5 leaves it to the source node alone, which is why
+  # packet-too-big has to be admitted through VALID_ICMP above. A source that fragments still
+  # puts a Fragment extension header on the wire and this host still receives it, so "routers
+  # never fragment" is not a reason to have no chain here. ch1-9 named FRAGMENTS as one of four
+  # and ipv6 had three; the drill looped over the other three and could not see it.
+  #
+  # If anything the v6 case is sharper than the v4 one. RFC 7112 exists because a first fragment
+  # that does not carry the whole header chain hides the L4 ports in a later fragment, where no
+  # port rule can match them - evasion by construction. RFC 5722 requires the WHOLE datagram be
+  # discarded when fragments overlap. RFC 8900 is the general position.
+  #
+  # `frag frag-off != 0` and not `exthdr frag exists`, deliberately: RFC 6946 atomic fragments
+  # carry a Fragment header with offset 0 and MF unset and MUST be handled as unfragmented, so
+  # the blunt form would break conformance and take large DNSSEC answers with it. Offset is the
+  # selector that separates them, and it gives exactly the v4 semantics next door.
+  #
+  # WHAT THIS DOES NOT DO is enforce RFC 7112's first-fragment rule. nftables cannot ask whether
+  # a first fragment carried the complete header chain, so the evasion that motivates the RFC is
+  # only partly closed here: the follow-on fragments die, the reassembly never completes, and a
+  # first fragment on its own is still admitted to the service chains. Recorded as ch1-U12.
+  #
+  # Priority -450 for the same reason as v4 - see that template. `nf_defrag_ipv6` is loaded here
+  # by nf_conntrack and hooks prerouting at -400, so anything at `raw` runs after reassembly and
+  # never sees a fragment at all.
+  chain FRAGMENTS {
+    type filter hook prerouting priority -450;
+
+      frag frag-off != 0 counter name NUMBER_OF_FRAGMENTS_DROPPED drop
   }
 
   # Count the number of packets with a source or destination port of 0

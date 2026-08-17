@@ -234,26 +234,93 @@ def test_every_rule_can_be_defended():
                        "chapter exists to invite and cannot make on its own behalf")
 
 
+# nftables' named priorities, and the two kernel hooks that decide whether a sanity chain is
+# reachable at all. `raw` is ahead of conntrack; DEFRAG is ahead of `raw` and is where a fragment
+# stops being a fragment.
+_RAW = -300
+_CONNTRACK = -200
+_DEFRAG = -400
+_NAMED = {"raw": _RAW, "mangle": -150, "dstnat": -100, "filter": 0, "srcnat": 100}
+
+# `chain NAME {` and then the `type ... hook ... priority ...;` line that follows it.
+_CHAIN = re.compile(r"chain (\w+) \{\s*\n\s*type \w+ hook (\w+) priority (-?\w+);")
+
+
+def _base_chains(family: str) -> dict:
+    """chain name -> (hook, numeric priority), from the INBOUND table of a family's base.rules.
+
+    Scoped to that table deliberately: `INVALID_FLAGS` is defined in both, on `input` here and on
+    `output` next door, so reading the whole file returns the outbound one and an assertion about
+    the sanity chains silently asks about the wrong chain.
+    """
+    text = (ROOT / "templates" / family / "base.rules").read_text()
+    inbound = text.split("-outbound-")[0]
+    return {name: (hook, _NAMED.get(prio, int(prio) if _is_int(prio) else prio))
+            for name, hook, prio in _CHAIN.findall(inbound)}
+
+
+def _is_int(value: str) -> bool:
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
+
+
+# WHAT EACH SANITY CHAIN MUST BE, and the priority is half of it. A chain at the wrong priority is
+# not a weaker rule, it is an absent one, and it looks identical from the template.
+_SANITY = {
+    "SPOOFING": ("input", _RAW),
+    "INVALID_FLAGS": ("input", _RAW),
+    "PORT_ZERO": ("input", _RAW),
+    "FRAGMENTS": ("prerouting", -450),
+}
+
+
 @pytest.mark.proves("ch1-9", depth="structural")
 def test_incoherent_traffic_is_dropped_before_any_flag_is_consulted():
     """The package's other reason to exist, asserted so it cannot be quietly lost.
 
-    These four chains are what a host gets from installing afirewall at all — they run at
-    `priority raw`, ahead of every service decision, and none of them reads the configuration. A
-    flag cannot turn them off and a missing flag cannot bypass them, which is exactly why they are
-    the part that does not need arguing per service.
+    These four chains are what a host gets from installing afirewall at all — they run ahead of
+    every service decision, in both families, and none of them reads the configuration. A flag
+    cannot turn them off and a missing flag cannot bypass them, which is exactly why they are the
+    part that does not need arguing per service.
+
+    THE PRIORITY IS ASSERTED, AND IT IS WHY THIS DRILL WAS REWRITTEN. It used to check that a
+    chain was *defined* and that *some* counted drop existed, while its own docstring said the
+    chains run at `priority raw`. Three things were true underneath it and it read green through
+    all of them: ipv6 SPOOFING was at `mangle` from the genesis commit, ipv6 had no FRAGMENTS
+    chain at all, and the ipv4 FRAGMENTS chain was behind `nf_defrag` and could never fire. It
+    also looped over three chains while the claim named four, which is how the missing one stayed
+    missing.
 
     THE COUNTERS ARE PART OF THE CLAIM, not decoration. `nft list counters` says whether a rule has
     ever fired, so a drop rule that matches nothing is visible rather than assumed — which is the
-    same standard this chapter holds a limit to.
+    same standard this chapter holds a limit to. That only means anything if the chain is somewhere
+    a packet still reaches it, which is what the priority assertions below are for.
     """
     for family in ("ipv4", "ipv6"):
-        text = (ROOT / "templates" / family / "base.rules").read_text()
-        for chain in ("SPOOFING", "INVALID_FLAGS", "PORT_ZERO"):
-            assert f"chain {chain} {{" in text, (
-                f"{family}/base.rules no longer defines {chain}. It runs ahead of every service "
+        found = _base_chains(family)
+        for chain, (hook, priority) in _SANITY.items():
+            assert chain in found, (
+                f"{family}/base.rules does not define {chain}. It runs ahead of every service "
                 "decision and reads no flag, so losing it silently weakens every host that "
-                "installs this package, whatever their configuration says")
+                "installs this package, whatever their configuration says. Both families get all "
+                f"four: ipv6 went without {chain} once, on the reasoning that IPv6 removed "
+                "something it did not remove")
+            assert found[chain] == (hook, priority), (
+                f"{family} {chain} is at {found[chain]}, not {(hook, priority)}. A sanity chain at "
+                "the wrong priority is an absent one that reads present: at `mangle` it runs "
+                "behind conntrack and the packet it drops has already been tracked, and behind "
+                "DEFRAG it is handed a reassembled datagram with no fragment left to match")
+
+        assert found["FRAGMENTS"][1] < _DEFRAG, (
+            f"{family} FRAGMENTS is at {found['FRAGMENTS'][1]}, which is behind nf_defrag at "
+            f"{_DEFRAG}. Every host running these templates asks for conntrack, so defrag is "
+            "registered and reassembly has already happened — the rule cannot match, its counter "
+            "can only read zero, and a zero is indistinguishable from 'no fragments arrived'")
+
+        text = (ROOT / "templates" / family / "base.rules").read_text()
         drops = [line.strip() for line in text.splitlines()
                  if line.strip().endswith("drop") and "counter name" in line]
         assert drops, (
