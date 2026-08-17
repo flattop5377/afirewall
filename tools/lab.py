@@ -205,6 +205,43 @@ def scapy_interpreter():
     return None
 
 
+def upgrade_from(tag, basedir):
+    """Load the ruleset the PREVIOUS RELEASE built, then let this tree replace it in place.
+
+    THIS EXISTS BECAUSE IT SHOULD HAVE EXISTED SOONER. 20260817.0.0 moved the fragment chain to a
+    new hook priority and shipped; the first host to take it could not apply it, because `nft -c`
+    validates against the kernel as it is and a changed chain is checked against the copy of itself
+    already loaded. Two releases went out before a deployment found it — and a namespace that could
+    have found it in seconds was sitting right here, testing only that a ruleset loads onto a bare
+    kernel.
+
+    A firewall is upgraded far more often than it is installed, so loading onto nothing is the case
+    that matters least. This renders the previous release's templates from git, loads them, and
+    then does exactly what an upgrade does.
+    """
+    previous = pathlib.Path(basedir) / "previous"
+    export = subprocess.run(["git", "-C", str(ROOT), "archive", tag], capture_output=True)
+    if export.returncode != 0:
+        return None, f"no such release tag as {tag}"
+    previous.mkdir()
+    subprocess.run(["tar", "-x", "-C", str(previous)], input=export.stdout, check=True)
+    if not (previous / "templates").is_dir():
+        return None, f"{tag} has no templates to render"
+
+    generated = pathlib.Path(basedir) / "was"
+    generated.mkdir()
+    script = (f"mkdir -p /var/lib/afirewall && mount --bind {generated} /var/lib/afirewall && "
+              f"{sys.executable} {previous}/afirewall/afirewall.py -b {previous} regenerate")
+    done = run("ip", "netns", "exec", TARGET, "unshare", "-m", "sh", "-c", script, check=False)
+    if done.returncode != 0:
+        return None, f"the previous release would not build its own ruleset: {done.stderr.strip()}"
+    for nft in sorted(generated.glob("ipv[46].nft")):
+        loaded = run("nft", "-f", str(nft), ns=TARGET, check=False)
+        if loaded.returncode != 0:
+            return None, f"could not load {tag}'s ruleset: {loaded.stderr.strip()}"
+    return True, None
+
+
 def crossing(port, expect):
     """Can the attacker reach the service namespace on this port, through the target?
 
@@ -272,6 +309,19 @@ def main():
     failures = []
     try:
         setup()
+
+        # THE UPGRADE, BEFORE ANYTHING ELSE, so the rest of this run happens on a host that was
+        # already running a firewall rather than on a bare kernel.
+        tags = subprocess.run(["git", "-C", str(ROOT), "tag", "--list", "upstream/latest/*",
+                               "--sort=-version:refname"], capture_output=True, text=True)
+        previous = next((t for t in tags.stdout.split() if t), None)
+        if previous:
+            ok, why = upgrade_from(previous, basedir)
+            print(f"  {'PASS' if ok else 'FAIL'}  {'upgrade':<62} "
+                  f"{previous.rsplit('/', 1)[1]}'s ruleset loaded first")
+            if not ok:
+                failures.append(f"upgrade from {previous}: {why}")
+
         print(load_ruleset(basedir).strip())
         chains = run("nft", "list", "tables", ns=TARGET).stdout.split("\n")
         print(f"\nlab up — {len([c for c in chains if c.strip()])} tables in {TARGET}\n")
