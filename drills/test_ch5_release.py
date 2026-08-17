@@ -163,7 +163,14 @@ def test_the_deliverable_layer_is_only_ever_authored_for_its_own_files():
     for line in [ln for ln in out.splitlines() if ln]:
         sha = line.split()[0]
         touched, _ = git("show", "--name-only", "--format=", sha)
-        outside = sorted(set(f for f in touched.splitlines() if f) - UPSTREAM_ONLY)
+        # RETIRING A FILE THAT ONLY EVER LIVED HERE IS NOT AUTHORING ONE. A file this layer owned
+        # can only be deleted on this layer, so the commit that removes it must be made here — and
+        # it leaves nothing for master to be missing, which is the harm this rule exists to
+        # prevent. Paths gone from BOTH branches are dropped for that reason; anything still
+        # present is judged as before. Found when the Python deliverable was retired and the only
+        # possible commit doing it read as a violation.
+        present = tree("master") | tree("upstream/latest")
+        outside = sorted(set(f for f in touched.splitlines() if f) & present - UPSTREAM_ONLY)
         if outside:
             strayed.append(f"{line}\n      touches {outside}")
     assert not strayed, (
