@@ -133,7 +133,9 @@ what ships stays rebuildable (`ch5-7`).
   would keep the two in step. What is undecided is whether a generated manpage can carry the prose
   the current one does — the argument for `-ipv4dest` being a documentation address is not
   something argparse holds — or whether the answer is a generated options section inside a
-  hand-written page. Anchored to `ch5-2`.
+  hand-written page. **The version half was closed on 2026-08-17**: the cut stamps `.TH` with the
+  version and the date, on master so the layers do not disagree about a shared file. What is
+  left is the options section, which is the half that describes behaviour. Anchored to `ch5-2`.
 
 - **ch5-U6 — RESOLVED, and resolving it made the board worse and truer.** `afirewall.py` had no
   callable entry point — eighty-nine lines under `if __name__ == "__main__":` — so `plumb.toml`
