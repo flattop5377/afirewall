@@ -1,4 +1,4 @@
-.TH afirewall 8 "17 Aug 2026" "20260817.0.0" "afirewall manual"
+.TH afirewall 8 "17 Aug 2026" "20260817.1.0" "afirewall manual"
 
 .SH NAME
 afirewall \- A pure NetFilter Firewall wrapper for Linux
@@ -62,6 +62,21 @@ stop the firewall restoring the netfilter default (which is probably to allow al
 deletes exactly the tables afirewall owns - the inbound and outbound pair in each family, and the
 forward pair where something forwarded is enabled - and never flushes the ruleset, so rules another
 tool put there are left alone
+
+.OP "counters"
+print what the sanity chains have stopped, both address families side by side.  Reads the kernel and
+changes nothing, so it needs root and needs no configuration - a host whose \fI/etc/afirewall\fR is
+gone can still be asked what its firewall has refused.  A \fB-\fR means that counter is not loaded,
+which is not a zero.  \fBA ZERO IS NOT A CLEAN BILL OF HEALTH\fR: it means nothing of that kind
+arrived, or the rule cannot be reached, or something upstream dropped it first, and nothing on the
+host distinguishes them.
+
+.OP "\-\-json"
+counters: one JSON object on standard output instead of the table - \fB{"counters": [{"direction":
+"inbound", "family": "ipv4", "name": ..., "label": ..., "packets": N, "bytes": N}, ...]}\fR - for
+something that consumes the numbers.  A counter that is not loaded has no record, which is the same
+distinction the table draws with \fB-\fR.  \fBenable\fR and \fBdisable\fR print JSON always and
+do not take this flag; a configuration manager must not have to ask for it.
 
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall

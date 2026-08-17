@@ -54,6 +54,19 @@ git -C "$REPO" rev-parse --verify --quiet "refs/tags/upstream/latest/$VERSION" >
   && { echo "upstream/latest/$VERSION already exists"; exit 1; }
 "$REPO/.venv/bin/python" -m pytest "$REPO/drills/test_ch5_release.py" -q
 
+# THE MANPAGE'S VERSION STAMP, SET HERE BECAUSE IT IS THE ONLY MOMENT THAT KNOWS IT. Written by
+# hand it is stale by definition: it names a release while sitting on the commit that precedes one,
+# and on 2026-08-17 it was two releases behind and describing a subcommand that had changed. This
+# is the version half of ch5-U5 - the options half, generating the page from get_parser(), is
+# still open - and it is stamped on MASTER so the two layers do not disagree about a shared file,
+# which the state drill would refuse.
+say "stamping the manpage for $VERSION"
+sed -i -E "s/^\.TH afirewall 8 \"[^\"]*\" \"[^\"]*\"/.TH afirewall 8 \"$(date +'%-d %b %Y')\" \"$VERSION\"/" \
+    "$REPO/doc/man/afirewall.8"
+if ! git -C "$REPO" diff --quiet -- doc/man/afirewall.8; then
+    git -C "$REPO" commit -q -m "Stamp the manpage for $VERSION" -- doc/man/afirewall.8
+fi
+
 # THE SOURCE LAYER IS MERGED IN, NOT COPIED. master deletes nothing this layer owns, but a
 # conflict here is a real question and the script stops rather than guessing: it means the two
 # layers disagree about a file, and which side wins is not a decision a script should take.
@@ -70,7 +83,12 @@ git -C "$REPO" merge --no-edit upstream/latest
 say "changelog at $VERSION-1 — edit it to say what changed FOR SOMEBODY INSTALLING IT"
 gbp dch --release --new-version="$VERSION-1" --distribution=unstable --force-distribution \
         --spawn-editor=never
-"${EDITOR:-sensible-editor}" "$REPO/debian/changelog"
+# `eval`, BECAUSE $EDITOR IS A COMMAND LINE AND NOT A FILENAME. Quoted as one word this runs a
+# program literally named `python3 /path/to/thing.py` and fails with "No such file or directory" -
+# which is what happened on 20260817.0.0, after the merge and the tag, leaving the release
+# half-made and the trap below to explain where. Anything a person sets EDITOR to may carry
+# arguments, and `sensible-editor` still works unquoted.
+eval "${EDITOR:-sensible-editor}" "\"$REPO/debian/changelog\""
 git -C "$REPO" commit -q -am "Release $VERSION-1"
 
 # --git-pristine-tar-commit is what makes this release rebuildable years later, and --git-tag is

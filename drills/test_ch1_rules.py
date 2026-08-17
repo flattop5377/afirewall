@@ -405,7 +405,11 @@ def test_a_run_that_cannot_build_a_ruleset_changes_nothing():
         "generate() no longer refuses when no interface is found in any family. Without that it "
         "returns having produced nothing, the caller deletes the loaded tables, and the run exits "
         "successfully with the host unprotected.")
-    assert body.index("if not interfaces:") < body.index("test(args.basedir"), (
+    # MATCHED ON THE CALL, NOT ON ITS ARGUMENTS. This pinned the literal `test(args.basedir` and
+    # broke the day `test` took the nft path as a parameter — a red drill about a signature, for a
+    # claim that is entirely about ORDER: the refusal has to come before anything is generated.
+    rendered = re.search(r"\btest\(", body)
+    assert rendered and body.index("if not interfaces:") < rendered.start(), (
         "the refusal must come before anything is generated or torn down")
 
 

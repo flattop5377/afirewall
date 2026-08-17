@@ -8,9 +8,16 @@ adapter = "python"
 production   = ["afirewall"]
 sources      = ["afirewall"]
 
-# The generator is run as a command against a config and a template tree; there is no request
-# entering a wired system.
-entry_points = []
+# WHERE THE WIRED SYSTEM BEGINS. This said `[]` with the note "the generator is run as a command
+# against a config and a template tree; there is no request entering a wired system" - which is a
+# true description of the shape and was the wrong conclusion. A command IS an entry point; what was
+# missing was something to name, because afirewall.py ended in `if __name__ == "__main__":` and had
+# no callable at all.
+#
+# What the empty list cost: grounding never ran, so every behavioural subject here answered
+# `passed-wiring-not-verified` - nine of them once chapters 4 and 8 landed. Grounding is what
+# catches orphaned code, and a package that cannot be entered cannot be asked.
+entry_points = ["afirewall.afirewall:main"]
 
 # Off because it is slow, not because it is optional. `plumb board --mutation` for a run.
 mutation = false

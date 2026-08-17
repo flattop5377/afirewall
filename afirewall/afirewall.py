@@ -44,25 +44,25 @@ OWNED_TABLES = (('ip', 'a-firewall-inbound-ipv4'), ('ip', 'a-firewall-outbound-i
                 ('ip', 'a-firewall-forward-ipv4'), ('ip6', 'a-firewall-inbound-ipv6'),
                 ('ip6', 'a-firewall-outbound-ipv6'), ('ip6', 'a-firewall-forward-ipv6'))
 
-def stop():
+def stop(nft):
    for family, table in OWNED_TABLES:
-      subprocess.run(args=[args.nft, 'delete', 'table', family, table],
+      subprocess.run(args=[nft, 'delete', 'table', family, table],
                      capture_output=True, encoding='UTF-8')
 
-def start(nft_input):
+def start(nft, nft_input):
    """Load a ruleset, and say so when it does not load.
 
    The return code used to go unread and stderr was captured and thrown away, so a load that
    failed printed 'Loading rules from ...' and exited 0 with the host unprotected. A firewall
    that cannot say whether it is running is worse than one that is plainly off."""
-   nft_result = subprocess.run(args=[args.nft, '-f', nft_input], capture_output=True, encoding='UTF-8')
+   nft_result = subprocess.run(args=[nft, '-f', nft_input], capture_output=True, encoding='UTF-8')
    if nft_result.returncode != 0:
       sys.exit('Failed to load ' + nft_input + ': ' + nft_result.stderr.strip())
 
-def test(template_directory, interface, config):
+def test(nft, template_directory, interface, config):
    nft_input = process_scripts(template_directory, interface, config)
    if nft_input != None:
-      nft_result = subprocess.run(args=[args.nft, '-c', '-f',  nft_input], capture_output=True, encoding='UTF-8')
+      nft_result = subprocess.run(args=[nft, '-c', '-f',  nft_input], capture_output=True, encoding='UTF-8')
       if nft_result.returncode != 0:
          sys.exit('NFT syntax validation failed on ' + interface.family.name + ': ' + nft_result.stderr)
       return nft_input
@@ -81,6 +81,97 @@ SHIPPED = '/usr/share/afirewall'
 
 #: Where the rendered ruleset goes. See process_scripts for why it is not the base directory.
 GENERATED = '/var/lib/afirewall'
+
+#: WHAT EACH COUNTER IS ACTUALLY COUNTING, in words rather than in a constant's name. The kernel
+#: names are what the templates emit and what `nft` prints; nobody should have to translate
+#: NUMBER_OF_PORT_ZERO_SEGMENTS_DROPPED in their head to read a diagnostic.
+COUNTER_LABELS = (
+   ('NUMBER_OF_SPOOFS_DROPPED', 'source could not have arrived here'),
+   ('NUMBER_OF_NOT_LOCAL_DROPPED', 'not addressed to this host'),
+   ('NUMBER_OF_INVALID_FLAGS_DROPPED', 'TCP flags RFC 9293 forbids'),
+   ('NUMBER_OF_FRAGMENTS_DROPPED', 'non-first fragments'),
+   ('NUMBER_OF_PORT_ZERO_SEGMENTS_DROPPED', 'port zero, either direction'),
+)
+
+def read_counters(nft):
+   """(direction, family, name) -> {packets, bytes}, for the tables this package owns.
+
+   Keyed on the table's direction as well as the name, because inbound and outbound both define
+   NUMBER_OF_INVALID_FLAGS_DROPPED and only one of them ever moves. Summing them would report the
+   outbound chain's zero as the inbound chain's silence.
+   """
+   done = subprocess.run(args=[nft, '-j', 'list', 'counters'], capture_output=True, encoding='UTF-8')
+   if done.returncode != 0:
+      sys.exit('could not read the counters from ' + nft + ': ' + done.stderr.strip())
+   found = {}
+   for obj in json.loads(done.stdout).get('nftables', []):
+      counter = obj.get('counter')
+      table = (counter or {}).get('table', '')
+      if not table.startswith('a-firewall-'):
+         continue
+      # a-firewall-<direction>-<family>, and the name is built by the templates rather than parsed
+      # from anywhere, so splitting it is reading this package's own convention back.
+      _, _, direction, family = table.split('-')
+      found[(direction, family, counter['name'])] = {'packets': counter['packets'],
+                                                     'bytes': counter['bytes']}
+   return found
+
+def show_counters(nft, as_json):
+   """Print what the sanity chains have actually stopped, both families side by side.
+
+   SIDE BY SIDE BECAUSE THAT IS WHERE THE ASYMMETRIES ARE. Every defect this package found in its
+   own sanity chains during August 2026 was one family differing from the other - ipv6 spoofing at
+   the wrong priority, ipv6 with no fragment chain at all, ipv4's fragment chain behind defrag -
+   and `nft list counters` prints the two families in separate blocks a screen apart, which is
+   exactly the layout that hides it.
+
+   A ZERO IS NOT A CLEAN BILL OF HEALTH and the footer says so, because that misreading is the one
+   this package has actually made. It has three causes and this display cannot tell them apart:
+   nothing of that kind arrived, the rule cannot be reached, or something upstream dropped it
+   first. `tools/lab.py` is what distinguishes them, by sending the traffic on purpose.
+
+   AND AN ABSENT COUNTER IS NOT A ZERO, in either output. The table prints `-`; the JSON simply has
+   no record for it. Emitting a zero would claim the host looked and saw nothing, when what is true
+   is that the rule is not there - which is how a release without an ipv6 fragment chain reads
+   identically to one that has never seen a fragment.
+   """
+   found = read_counters(nft)
+   if not found:
+      sys.exit('no afirewall counters are loaded, so this host is not running a ruleset this '
+               'package built. `afirewall reload` builds one; `nft list tables` says what is there.')
+
+   if as_json:
+      # ONE OBJECT WITH A LIST IN IT, not a bare array: a consumer that wants to iterate can, and
+      # anything this needs to say later has somewhere to go without changing the shape it already
+      # publishes. Each record carries its own label, so a reader is not required to hold a
+      # translation table for the kernel's names.
+      print(json.dumps({'counters': [
+         {'direction': direction, 'family': family, 'name': name, 'label': label,
+          'packets': found[(direction, family, name)]['packets'],
+          'bytes': found[(direction, family, name)]['bytes']}
+         for direction in ('inbound', 'outbound', 'forward')
+         for family in ('ipv4', 'ipv6')
+         for name, label in COUNTER_LABELS
+         if (direction, family, name) in found]}))
+      return
+
+   for direction in ('inbound', 'outbound', 'forward'):
+      rows = [(label, found.get((direction, 'ipv4', name)), found.get((direction, 'ipv6', name)))
+              for name, label in COUNTER_LABELS]
+      rows = [r for r in rows if r[1] is not None or r[2] is not None]
+      if not rows:
+         continue
+      print('\n{d}{pad}{v4:>12}{v6:>12}'.format(d=direction, pad=' ' * (36 - len(direction)),
+                                                v4='ipv4', v6='ipv6'))
+      for label, four, six in rows:
+         print('  {l:<34}{f:>12}{s:>12}'.format(
+            l=label, f='-' if four is None else four['packets'],
+            s='-' if six is None else six['packets']))
+
+   print('\nA zero has three causes and this cannot tell them apart: nothing of that kind '
+         'arrived,\nthe rule cannot be reached, or something upstream dropped it first. `-` means '
+         'the counter\nis not loaded at all. tools/lab.py settles it by sending the traffic on '
+         'purpose.')
 
 def first_existing(*paths):
    """The first of these that is there, or the last as the thing to complain about."""
@@ -174,7 +265,7 @@ def process_scripts(base_directory, interface, config):
 
    return output_name
 
-def ip_json(*arguments):
+def ip_json(ip, *arguments):
    """Ask `ip` for structured output instead of parsing what it prints for humans.
 
    THIS REPLACED FOUR REGEXES AND THE BUG THEY HID. Interface discovery used to match `ip`'s
@@ -191,7 +282,7 @@ def ip_json(*arguments):
 
    `-json` has been in iproute2 since 4.15 and bookworm ships 6.1, so nothing is given up for it.
    What it buys is that neither of those bugs is expressible."""
-   done = subprocess.run(args=[args.ip, '-json', *arguments], capture_output=True, encoding='UTF-8')
+   done = subprocess.run(args=[ip, '-json', *arguments], capture_output=True, encoding='UTF-8')
    if done.returncode != 0 or not done.stdout.strip():
       return []
    try:
@@ -199,14 +290,14 @@ def ip_json(*arguments):
    except json.JSONDecodeError:
       return []
 
-def get_external_network(device, address, family):
+def get_external_network(ip, device, address, family):
    """The network of the address the route chose, which is not always the device's first.
 
    Matched on the address rather than taken from the top of the list, because an interface commonly
    carries several - a link-local beside a global, an alias, a second prefix - and the one that
    matters is the one traffic to the outside actually leaves from."""
    wanted = 'inet' if family == Family.IPV4 else 'inet6'
-   for link in ip_json('addr', 'show', device):
+   for link in ip_json(ip, 'addr', 'show', device):
       for info in link.get('addr_info', []):
          if info.get('family') != wanted: continue
          if info.get('scope') == 'link': continue
@@ -261,18 +352,18 @@ def get_stated_external_device(base_directory):
    # REFUSED RATHER THAN FALLEN BACK FROM. A fallback to discovery would turn a typo into a firewall
    # that protects a different interface than the one it was told to - quiet, plausible, and exactly
    # the failure that inferring the interface at all was criticised for.
-   if not ip_json('link', 'show', device):
+   if not ip_json(ip, 'link', 'show', device):
       sys.exit('No such device on this host: ' + device + ' (named in ' + path + '). Nothing is '
                'generated - a stated interface that is not there is a typo, not a reason to guess.')
    return device
 
-def get_external_interface_by_name(device, family):
+def get_external_interface_by_name(ip, device, family):
    """Build an Interface for a device the operator named, per family.
 
    A device with no address in a family gets no ruleset for it, which is the same answer discovery
    gives when there is no route - a host without IPv6 is not a host with a broken IPv6 firewall."""
    wanted = 'inet' if family == Family.IPV4 else 'inet6'
-   for link in ip_json('addr', 'show', device):
+   for link in ip_json(ip, 'addr', 'show', device):
       for info in link.get('addr_info', []):
          if info.get('family') != wanted or info.get('scope') == 'link':
             continue
@@ -283,24 +374,18 @@ def get_external_interface_by_name(device, family):
             return None
    return None
 
-def get_external_interface(destination, family):
+def get_external_interface(ip, destination, family):
    """Which device and address this host reaches the outside on, per family."""
-   routes = ip_json('route', 'get', 'to', destination)
+   routes = ip_json(ip, 'route', 'get', 'to', destination)
    if not routes: return None
    device, address = routes[0].get('dev'), routes[0].get('prefsrc')
    if device is None or address is None: return None
-   network = get_external_network(device, address, family)
+   network = get_external_network(ip, device, address, family)
    if network is None: return None
    try:
       return Interface(address, network, device, family)
    except ValueError:
       return None
-
-def get_external_ipv4_interface(destination):
-   return get_external_interface(destination, Family.IPV4)
-
-def get_external_ipv6_interface(destination):
-   return get_external_interface(destination, Family.IPV6)
 
 def get_parser():
    # THIRTEEN SUBCOMMANDS AND A PERSON NEEDS THREE. The list is flat because argparse gives one
@@ -356,13 +441,14 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
    # `restart`, `reload` and `force-reload` are never sent by netfilter-persistent at all. They
    # exist here for a person or a configuration manager, so they are aliases of `regenerate`, which
    # is what somebody typing them after editing afirewall.conf means.
-   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service', 'enable', 'disable'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two. enable/disable set one flag in afirewall.conf and report what changed')
+   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service', 'enable', 'disable', 'counters'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two. enable/disable set one flag in afirewall.conf and report what changed; counters shows what the sanity chains have stopped')
    parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits. enable/disable: the flag to set, as <inbound|outbound>.<service>')
    # A DRY RUN IS THE COMMAND'S JOB AND NOT THE CALLER'S (ch3-3). ansible's --check does not run a
    # `command:` at all: it returns rc 0 with empty stdout and a register that is DEFINED, so a play
    # reading back what it just did reads a fabricated success and asserts on it. The pair that
    # makes a check run real is `check_mode: false` on the task with this flag passed explicitly.
    parser.add_argument('--dry-run', action='store_true', help='enable/disable: do everything except the write, validation included, and report what would have changed')
+   parser.add_argument('--json', action='store_true', help='counters: one JSON object instead of the table, for something that consumes the numbers')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
    parser.add_argument('--forward', dest='direction', action='store_const', const='forward', help='add-service: the host forwards these ports to somewhere else - needs --to')
@@ -398,6 +484,14 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
 def parse_arguments():
    parser = get_parser()
    args = parser.parse_args()
+
+   # ONE PLACE, BEFORE ANYTHING BRANCHES. This lived inside the add-service checks first, which
+   # meant `enable --json` was accepted and silently did nothing - a flag that reads as a request
+   # and is not one. enable and disable print JSON unconditionally, because ch3-6 says a
+   # configuration manager must not have to ask for it.
+   if args.json and args.command != 'counters':
+      sys.exit('--json is counters\' flag. enable and disable print one JSON object always, and '
+               'nothing else here has numbers to publish.')
 
    # AUTHORING IS NOT A PRIVILEGED OPERATION AND DOES NOT TOUCH THE KERNEL. It writes files into a
    # template tree, so it needs neither root, nor nft, nor ip, nor a route to the internet. The
@@ -447,6 +541,13 @@ def parse_arguments():
    pattern = re.compile('ip utility.*')
    if not pattern.match(ip_completed.stdout): sys.exit(args.ip + ' doesn\'t appear to be ip?')
 
+   # COUNTERS ASKS THE KERNEL AND READS NO CONFIGURATION, so it stops here. It needs nft to be
+   # real - checked above - and needs nothing under the base directory, and requiring one would
+   # mean a host whose /etc/afirewall is gone could not be asked what its firewall has stopped,
+   # which is exactly when somebody wants to know.
+   if args.command == 'counters':
+      return args
+
    if not os.access(args.basedir, mode=os.R_OK): sys.exit('Base configuration directory ' + args.basedir + ' can\'t be opened')
 
    if not os.access(args.basedir + '/afirewall.conf', mode=os.R_OK): sys.exit('Configuration file ' + args.basedir + '/afirewall.conf can\'t be opened')
@@ -466,9 +567,9 @@ def branch(tree, vector, value):
       tree[key] = branch(tree[key] if key in tree else {}, vector[1:], value)
    return tree
 
-def get_configuration():
+def get_configuration(base_directory):
    config = {}
-   with open(args.basedir + '/afirewall.conf', 'r') as file:
+   with open(base_directory + '/afirewall.conf', 'r') as file:
       for line in file:
          li = re.sub(r'\s+', '', line)
          li = li.lower()
@@ -927,7 +1028,7 @@ def disable_services_missing_their_users(base_directory, config):
                break
    return config
 
-def get_interfaces(base_directory):
+def get_interfaces(base_directory, ip, ipv4dest, ipv6dest):
    """Which interfaces the rules are generated against.
 
    STATED FIRST, DISCOVERED OTHERWISE. Trust is a policy statement about a network and the routing
@@ -937,12 +1038,12 @@ def get_interfaces(base_directory):
    the anti-spoofing rules would be applied to the one interface they must not be."""
    stated = get_stated_external_device(base_directory)
    interfaces = []
-   for family, destination in ((Family.IPV4, args.ipv4dest), (Family.IPV6, args.ipv6dest)):
+   for family, destination in ((Family.IPV4, ipv4dest), (Family.IPV6, ipv6dest)):
       if stated is not None:
-         interface = get_external_interface_by_name(stated, family)
+         interface = get_external_interface_by_name(ip, stated, family)
          absent = stated + ' has no ' + family.name + ' address'
       else:
-         interface = get_external_interface(destination, family)
+         interface = get_external_interface(ip, destination, family)
          absent = 'there was no valid route to ' + destination
       if interface is not None:
          interfaces.append(interface)
@@ -950,7 +1051,28 @@ def get_interfaces(base_directory):
          warn('no ' + family.name + ' interface found: ' + absent)
    return interfaces
 
-if __name__ == "__main__":
+def main():
+   """The entry point, and it exists for a reason that outlived the one it was written for.
+
+   THIS FILE HAD NO CALLABLE ENTRY POINT AT ALL - it ended in `if __name__ == "__main__":` with
+   eighty-nine lines under it. The Python deliverable wanted one for `[project.scripts]`, and that
+   deliverable was retired on 2026-08-17; what did not retire is that `plumb.toml` could name no
+   production entry point either, so grounding never ran and every behavioural subject in this
+   repository read `passed-wiring-not-verified`. Grounding is what catches orphaned code, and a
+   package that cannot be entered cannot be asked.
+
+   NOTHING BELOW REACHES BACK FOR WHAT THIS PARSED. `stop`, `start`, `test`, `ip_json`,
+   `get_configuration` and interface discovery all read the parsed namespace off the module until
+   2026-08-17, so extracting this body needed `global args` to keep them working - and a global is
+   what made the extraction awkward rather than what the extraction needed. They take what they use
+   now, which is the convention the rest of this file already had: `process_scripts`,
+   `load_catalogue` and `set_flag` were all handed `base_directory` while `get_configuration`
+   reached for it.
+
+   What it cost while it lasted: the discovery tests had to FABRICATE the global -
+   `afirewall.args = SimpleNamespace(ip=...)` - to ask a question about routing, and `main` being
+   callable made the module state leak between calls rather than being set once per process.
+   """
    args = parse_arguments()
 
    # The root check sits AFTER parsing and BEFORE anything that reaches the kernel, rather than at
@@ -969,6 +1091,14 @@ if __name__ == "__main__":
                'enable' if args.command == 'enable' else 'disable', args.dry_run)
       sys.exit(0)
 
+   # READS THE KERNEL, SO IT NEEDS ROOT, and it is placed with the commands that do rather than
+   # with enable/disable which only edit a file. It changes nothing, which is why it sits before
+   # everything that does.
+   if args.command == 'counters':
+      if os.geteuid() != 0: sys.exit('Reading the counters needs root: they live in the kernel.')
+      show_counters(args.nft, args.json)
+      sys.exit(0)
+
    if os.geteuid() != 0: sys.exit('Root permissions required.')
 
    def generate():
@@ -983,8 +1113,9 @@ if __name__ == "__main__":
       not a host with a broken IPv6 firewall. No interface in ANY family is a different statement:
       it means nothing could be built, and the only safe thing to do with a ruleset you cannot
       replace is leave it alone."""
-      config = disable_services_missing_their_users(args.basedir, get_configuration())
-      interfaces = get_interfaces(args.basedir)
+      config = disable_services_missing_their_users(args.basedir,
+                                                    get_configuration(args.basedir))
+      interfaces = get_interfaces(args.basedir, args.ip, args.ipv4dest, args.ipv6dest)
       if not interfaces:
          sys.exit('No external interface was found in any family, so no ruleset can be built. '
                   'Nothing has been changed - whatever this host is running is still running. '
@@ -997,7 +1128,7 @@ if __name__ == "__main__":
       # nft -c is happy to check a ruleset whose tables are currently loaded, so there is
       # nothing to be gained by flushing first.
       for interface in interfaces:
-         test(args.basedir, interface, config)
+         test(args.nft, args.basedir, interface, config)
 
    def load():
       saved = sorted(glob.glob(GENERATED + '/ipv[46].nft'))
@@ -1007,10 +1138,10 @@ if __name__ == "__main__":
                   'regenerate` to build one from ' + args.basedir + '/afirewall.conf - it needs '
                   'the network to be up, because the external interface is found by routing '
                   'lookup unless it is named in ' + args.basedir + '/' + INTERFACES_FILE + '.')
-      stop()
+      stop(args.nft)
       for file in saved:
          print('Loading rules from ' + file)
-         start(file)
+         start(args.nft, file)
 
    match args.command:
       # RESTORE, AND ONLY RESTORE. `start` is netfilter-persistent's name for this and arrives at
@@ -1036,6 +1167,10 @@ if __name__ == "__main__":
       case 'save':
          generate()
       case 'stop' | 'flush':
-         stop()
+         stop(args.nft)
       case 'test':
          generate()
+
+
+if __name__ == "__main__":
+   main()

@@ -39,6 +39,41 @@ $ afirewall reload
 one that merely counts it look identical in a ruleset, so this package will not write one without
 being told which it is and why.
 
+Seeing what it has actually stopped:
+
+```
+$ sudo afirewall counters
+
+inbound                                     ipv4        ipv6
+  source could not have arrived here         625           0
+  not addressed to this host                   0           0
+  TCP flags RFC 9293 forbids                   0           0
+  non-first fragments                          0           -
+  port zero, either direction                  0           0
+```
+
+Both families side by side, because that is where the asymmetries are — `nft list counters` prints
+them in separate blocks a screen apart. A `-` means the counter is not loaded at all, which is not
+the same as a zero: the host above is running a release with no IPv6 fragment chain in it.
+
+For something that wants the numbers rather than a person:
+
+```
+$ sudo afirewall counters --json
+{"counters": [{"direction": "inbound", "family": "ipv4",
+               "name": "NUMBER_OF_SPOOFS_DROPPED",
+               "label": "source could not have arrived here",
+               "packets": 625, "bytes": 41300}, ...]}
+```
+
+One object, one line, each record carrying its own label and both packets and bytes. **A counter
+that is not loaded has no record at all** — the same distinction the table draws with `-`, so a
+consumer can tell "the rule is not there" from "the rule saw nothing".
+
+**A zero is not a clean bill of health.** It has three causes and nothing on the host can tell them
+apart: nothing of that kind arrived, the rule cannot be reached, or something upstream dropped it
+first. `tools/lab.py` settles it by sending the traffic on purpose.
+
 `afirewall --help` lists everything; most of the rest of that list is netfilter-persistent's
 vocabulary arriving from the system rather than from you.
 

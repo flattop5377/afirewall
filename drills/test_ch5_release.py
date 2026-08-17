@@ -203,7 +203,18 @@ def test_no_shared_file_differs_between_the_layers():
     files match are the two halves of one boundary being real.
     """
     have("master"); have("upstream/latest")
-    out, _ = git("diff", "--name-only", "master", "upstream/latest")
+    # THREE DOTS, NOT TWO, AND THE DIFFERENCE WOULD HAVE BLOCKED EVERY RELEASE. `master
+    # upstream/latest` asks what differs between the two tips, which in the ordinary state - master
+    # ahead, upstream not yet merged for the cut - is every commit since the last one. This drill
+    # is a gate release.sh runs BEFORE it merges, so written that way it goes red at exactly the
+    # moment it is consulted. Measured the day it was added: 7 files against an upstream three
+    # commits behind, every one of them just master moving.
+    #
+    # `master...upstream/latest` asks what upstream/latest has that master does NOT, relative to
+    # where they last agreed. That is the fault this is for - content authored on the deliverable
+    # layer which the source never received - and being behind is not it. Checked both ways:
+    # green with master ahead, red the moment a shared file is authored on the other branch.
+    out, _ = git("diff", "--name-only", "master...upstream/latest")
     diverged = sorted(f for f in out.splitlines() if f and f not in UPSTREAM_ONLY)
     assert not diverged, (
         f"master and upstream/latest disagree about {len(diverged)} file(s) that neither layer "
