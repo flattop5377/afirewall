@@ -2,9 +2,16 @@
 
 The argument is in ``spec/diagrams/chapter-03-honest-to-its-configurator.md``.
 
-**RED, AND NOT UNWATCHED.** None of this is built. A drill marked unwatched would say nobody has
-taken a reading; what is true is that the reading is trivial and finds the feature absent, which is
-evidence rather than the lack of it.
+**BUILT ON 2026-08-17, AND THESE WENT GREEN BY THE SUBCOMMAND EXISTING RATHER THAN BY BEING
+RELAXED.** They were written first and stayed red for as long as the feature was absent, which is
+the only order that makes them evidence — a drill authored against a working implementation tends
+to describe it rather than test it.
+
+**EVERY ONE OF THESE RUNS THE COMMAND.** That is deliberate and it is the difference between this
+chapter and its neighbours: `ch1-9` read templates and stayed green through three broken chains,
+and chapter 2's drills read the source text of an authoring path whose function does not exist, so
+`add-service` raises NameError with `ch2` reading proven. A drill that greps for a feature proves
+the feature was typed.
 """
 
 import json

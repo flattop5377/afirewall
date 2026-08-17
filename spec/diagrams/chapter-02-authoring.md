@@ -97,12 +97,27 @@ shipped with the package (`ch2-7`).
   the help is how a discoverable subcommand becomes an undiscoverable one. The root check belongs on
   the commands that touch the kernel, not on the parser.
 
+- **ch2-U4 — RESOLVED by [chapter 8](chapter-08-declaration.md): there is no longer an edit to
+  place.** Wiring a service used to mean editing `base.rules`, with no good place to put the edit —
+  the shipped copy is overwritten by the next upgrade, and a base-directory copy wins forever so the
+  host stops receiving corrections to it. `ch8-3` removes the question rather than answering it:
+  `base.rules` loops over the records instead of naming services one line at a time, so adding a
+  service edits no template at all and a stranger's service and an upstream fix stop being the same
+  decision. What this unknown was choosing between were two ways of paying a cost that did not have
+  to exist.
+
 - **ch2-U2 — nothing decides what happens to a service that needs more than ports.** The existing
   outbound templates key on `meta skuid`, the WireGuard ones carry an argument about dynamic peer
   addresses, and bacula's three templates differ by role rather than by port. A generator that only
   understands protocol and port cannot produce those, and the honest position is that it should not
   try: it covers the common shape and hand-writing stays available for the rest. What is undecided
   is whether that limit is stated to the user or discovered by them. Anchored to `ch2-6`.
+
+  **Half answered by [chapter 8](chapter-08-declaration.md).** `ch8-6` makes the limit a stated
+  one rather than a discovered one — a record says a port or an owner and nothing else — and
+  `ch8-7` keeps hand-writing available as the named exception. What is still open is the part
+  this unknown is really about: `meta skuid` was reachable by a record only because somebody
+  noticed two services needed it, and the next shape nobody has met is discovered the same way.
 
 - **ch2-U3 — no reading has been taken of what people actually fail to find.** The two gaps named
   here come from one operator's hosts, which is a sample of one. Whether the missing templates are mostly
