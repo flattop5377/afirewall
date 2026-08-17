@@ -93,7 +93,30 @@ COUNTER_LABELS = (
    ('NUMBER_OF_PORT_ZERO_SEGMENTS_DROPPED', 'port zero, either direction'),
 )
 
-def show_counters(nft):
+def read_counters(nft):
+   """(direction, family, name) -> {packets, bytes}, for the tables this package owns.
+
+   Keyed on the table's direction as well as the name, because inbound and outbound both define
+   NUMBER_OF_INVALID_FLAGS_DROPPED and only one of them ever moves. Summing them would report the
+   outbound chain's zero as the inbound chain's silence.
+   """
+   done = subprocess.run(args=[nft, '-j', 'list', 'counters'], capture_output=True, encoding='UTF-8')
+   if done.returncode != 0:
+      sys.exit('could not read the counters from ' + nft + ': ' + done.stderr.strip())
+   found = {}
+   for obj in json.loads(done.stdout).get('nftables', []):
+      counter = obj.get('counter')
+      table = (counter or {}).get('table', '')
+      if not table.startswith('a-firewall-'):
+         continue
+      # a-firewall-<direction>-<family>, and the name is built by the templates rather than parsed
+      # from anywhere, so splitting it is reading this package's own convention back.
+      _, _, direction, family = table.split('-')
+      found[(direction, family, counter['name'])] = {'packets': counter['packets'],
+                                                     'bytes': counter['bytes']}
+   return found
+
+def show_counters(nft, as_json):
    """Print what the sanity chains have actually stopped, both families side by side.
 
    SIDE BY SIDE BECAUSE THAT IS WHERE THE ASYMMETRIES ARE. Every defect this package found in its
@@ -106,24 +129,34 @@ def show_counters(nft):
    this package has actually made. It has three causes and this display cannot tell them apart:
    nothing of that kind arrived, the rule cannot be reached, or something upstream dropped it
    first. `tools/lab.py` is what distinguishes them, by sending the traffic on purpose.
+
+   AND AN ABSENT COUNTER IS NOT A ZERO, in either output. The table prints `-`; the JSON simply has
+   no record for it. Emitting a zero would claim the host looked and saw nothing, when what is true
+   is that the rule is not there - which is how a release without an ipv6 fragment chain reads
+   identically to one that has never seen a fragment.
    """
-   done = subprocess.run(args=[nft, '-j', 'list', 'counters'], capture_output=True, encoding='UTF-8')
-   if done.returncode != 0:
-      sys.exit('could not read the counters from ' + nft + ': ' + done.stderr.strip())
-   found = {}
-   for obj in json.loads(done.stdout).get('nftables', []):
-      counter = obj.get('counter')
-      if counter and counter.get('table', '').startswith('a-firewall-'):
-         # Keyed on the table so inbound and outbound cannot be summed into one another; both
-         # define NUMBER_OF_INVALID_FLAGS_DROPPED and only one of them ever moves.
-         found[(counter['table'], counter['name'])] = counter['packets']
+   found = read_counters(nft)
    if not found:
       sys.exit('no afirewall counters are loaded, so this host is not running a ruleset this '
                'package built. `afirewall reload` builds one; `nft list tables` says what is there.')
 
+   if as_json:
+      # ONE OBJECT WITH A LIST IN IT, not a bare array: a consumer that wants to iterate can, and
+      # anything this needs to say later has somewhere to go without changing the shape it already
+      # publishes. Each record carries its own label, so a reader is not required to hold a
+      # translation table for the kernel's names.
+      print(json.dumps({'counters': [
+         {'direction': direction, 'family': family, 'name': name, 'label': label,
+          'packets': found[(direction, family, name)]['packets'],
+          'bytes': found[(direction, family, name)]['bytes']}
+         for direction in ('inbound', 'outbound', 'forward')
+         for family in ('ipv4', 'ipv6')
+         for name, label in COUNTER_LABELS
+         if (direction, family, name) in found]}))
+      return
+
    for direction in ('inbound', 'outbound', 'forward'):
-      rows = [(label, found.get(('a-firewall-' + direction + '-ipv4', name)),
-                      found.get(('a-firewall-' + direction + '-ipv6', name)))
+      rows = [(label, found.get((direction, 'ipv4', name)), found.get((direction, 'ipv6', name)))
               for name, label in COUNTER_LABELS]
       rows = [r for r in rows if r[1] is not None or r[2] is not None]
       if not rows:
@@ -131,10 +164,9 @@ def show_counters(nft):
       print('\n{d}{pad}{v4:>12}{v6:>12}'.format(d=direction, pad=' ' * (36 - len(direction)),
                                                 v4='ipv4', v6='ipv6'))
       for label, four, six in rows:
-         # A counter absent from a family is not zero. ipv6 has no FRAGMENTS chain on a host whose
-         # package predates it, and printing 0 there would claim it looked and saw nothing.
          print('  {l:<34}{f:>12}{s:>12}'.format(
-            l=label, f='-' if four is None else four, s='-' if six is None else six))
+            l=label, f='-' if four is None else four['packets'],
+            s='-' if six is None else six['packets']))
 
    print('\nA zero has three causes and this cannot tell them apart: nothing of that kind '
          'arrived,\nthe rule cannot be reached, or something upstream dropped it first. `-` means '
@@ -416,6 +448,7 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
    # reading back what it just did reads a fabricated success and asserts on it. The pair that
    # makes a check run real is `check_mode: false` on the task with this flag passed explicitly.
    parser.add_argument('--dry-run', action='store_true', help='enable/disable: do everything except the write, validation included, and report what would have changed')
+   parser.add_argument('--json', action='store_true', help='counters: one JSON object instead of the table, for something that consumes the numbers')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
    parser.add_argument('--forward', dest='direction', action='store_const', const='forward', help='add-service: the host forwards these ports to somewhere else - needs --to')
@@ -451,6 +484,14 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
 def parse_arguments():
    parser = get_parser()
    args = parser.parse_args()
+
+   # ONE PLACE, BEFORE ANYTHING BRANCHES. This lived inside the add-service checks first, which
+   # meant `enable --json` was accepted and silently did nothing - a flag that reads as a request
+   # and is not one. enable and disable print JSON unconditionally, because ch3-6 says a
+   # configuration manager must not have to ask for it.
+   if args.json and args.command != 'counters':
+      sys.exit('--json is counters\' flag. enable and disable print one JSON object always, and '
+               'nothing else here has numbers to publish.')
 
    # AUTHORING IS NOT A PRIVILEGED OPERATION AND DOES NOT TOUCH THE KERNEL. It writes files into a
    # template tree, so it needs neither root, nor nft, nor ip, nor a route to the internet. The
@@ -1055,7 +1096,7 @@ def main():
    # everything that does.
    if args.command == 'counters':
       if os.geteuid() != 0: sys.exit('Reading the counters needs root: they live in the kernel.')
-      show_counters(args.nft)
+      show_counters(args.nft, args.json)
       sys.exit(0)
 
    if os.geteuid() != 0: sys.exit('Root permissions required.')

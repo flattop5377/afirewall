@@ -71,6 +71,13 @@ which is not a zero.  \fBA ZERO IS NOT A CLEAN BILL OF HEALTH\fR: it means nothi
 arrived, or the rule cannot be reached, or something upstream dropped it first, and nothing on the
 host distinguishes them.
 
+.OP "\-\-json"
+counters: one JSON object on standard output instead of the table - \fB{"counters": [{"direction":
+"inbound", "family": "ipv4", "name": ..., "label": ..., "packets": N, "bytes": N}, ...]}\fR - for
+something that consumes the numbers.  A counter that is not loaded has no record, which is the same
+distinction the table draws with \fB-\fR.  \fBenable\fR and \fBdisable\fR print JSON always and
+do not take this flag; a configuration manager must not have to ask for it.
+
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall
 
