@@ -86,3 +86,16 @@ mutation = false
 "ch7-5" = "structural"
 "ch7-4" = "structural"
 "ch7-6" = "structural"
+# CHAPTER 8 IS BEHAVIOURAL ALMOST THROUGHOUT, AND THE BOARD HAD TO SAY SO. These were declared
+# structural first and came back as `structural.executed`, which is correct: every one of them
+# asks the RESOLVER — load_catalogue, service_bodies — rather than reading a file, so production
+# code runs and what passes is an exercise of the shape rather than a reading of it.
+#
+# That execution is the point rather than an accident. Chapter 2's drills read the source text of
+# an authoring path and passed for as long as `add_service` did not exist; chapter 1's read
+# templates and passed through three broken chains. A chapter whose subject is "the wiring is
+# derived" cannot be settled by looking at the thing the wiring is no longer written in. So the
+# archetypes are left undeclared and these subjects answer as behavioural.
+#
+# ch8-11 IS the exception and is genuinely inspection: it counts files on disk and imports nothing.
+"ch8-11" = "structural"

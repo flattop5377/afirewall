@@ -11,6 +11,7 @@ import pwd
 import re
 import shutil
 import subprocess
+import tomllib
 import sys
 
 def warn(message):
@@ -152,7 +153,12 @@ def process_scripts(base_directory, interface, config):
                'LOCAL_NETWORK': interface.network, 
                'SPOOFED_NETWORKS': spoofed_networks, 
                'inbound': config['inbound'],
-               'outbound': config['outbound']
+               'outbound': config['outbound'],
+               # THE SERVICES, ALREADY CHOSEN AND ALREADY RENDERED. base.rules loops over these
+               # rather than naming each service in six places (ch8-3), so the include, the jump
+               # and the reply in the other direction's chain all come from one record and cannot
+               # disagree about a name or a port (ch8-4).
+               'services': service_bodies(base_directory, interface.family.name.lower(), config)
             }).dump(output_name)
    except FileNotFoundError as e:
       sys.exit('Unable to write a pure NetFilters Firewall for Linux rules to ' + output_name + ' because: ' + e.message)
@@ -435,17 +441,21 @@ SERVICE_NAME = re.compile(r'^[a-z0-9]+$')
 SERVICE_TEMPLATE = """\
   #############################################################################
   #
-  ## {title} Rules
+  ## {title}
   #
-  #############################################################################
+{description}  #############################################################################
 {sets}  chain ACCEPT_{upper} {{
 {posture}{rules}  }}
 
 """
 
+#: THE SET LABELS ARE NORMALISED, and the hand-written ones were not. They read `SSH connection
+#: rate limit`, `POSTGRES rate limit`, `TCP 2914 connection rate limit` and `Baculs Storage Daemon
+#: connection rate limit` - four shapes and a typo, describing the same thing. One shape off the
+#: service's own name loses nothing and is listed in ch8-8 as an expected difference.
 LIMIT_SETS = """
   ##
-  # {title} rate limit
+  # {label} rate limit
   #
   set {service}_rate_limit {{
     type {addr}
@@ -455,7 +465,7 @@ LIMIT_SETS = """
   }}
 
   ##
-  # {title} connection limit
+  # {label} connection limit
   #
   set {service}_connection_limit {{
     type {addr}
@@ -466,164 +476,206 @@ LIMIT_SETS = """
 
 """
 
-def render_service(family, side, service, ports, posture, because):
-   """One service's template, for one family, in the shape the package already uses.
+CATALOGUE = 'services.toml'
 
-   BOTH FAMILIES ALWAYS, and the caller enforces it (ch2-6). What differs between them is two
-   tokens - the set's address type and the saddr selector - and getting the second wrong is not a
-   rule that matches nothing but a parse error, which is how this package's ipv6 ruleset spent
-   years not loading.
+def load_catalogue(base_directory):
+   """Every service record, shipped first and the base directory's merged OVER them (ch8-9).
+
+   MERGED RATHER THAN REPLACED, and the distinction is the whole of ch8-9. A base directory that
+   replaced the catalogue would rebuild ch2-U4 one file along: a stranger adding one service would
+   adopt the whole list and stop receiving every upstream addition and correction to it. Merging by
+   (direction, name) means a local record overrides exactly the service it names and nothing else.
+
+   Keyed on the pair rather than the name, because `inbound.wireguard` and `outbound.wireguard` are
+   different services that happen to share a word.
+   """
+   records = {}
+   for root in (SHIPPED, base_directory):
+      path = root + '/' + CATALOGUE
+      if not os.path.exists(path):
+         continue
+      with open(path, 'rb') as file:
+         for record in tomllib.load(file).get('service', []):
+            records[(record['direction'], record['name'])] = record
+   return records
+
+def service_bodies(base_directory, family, config):
+   """direction -> the enabled services in that direction, each with the text of its rules.
+
+   THE HAND-WRITTEN TEMPLATE WINS (ch8-7). A file for this service is used instead of rendering its
+   record, which is how the two `meta skuid` services keep a shape no record can say - and how an
+   operator overrides a shipped service without the catalogue having to anticipate them. ch8-U3 is
+   the part that is not decided: a template left lying around silently freezes that service.
+
+   ENABLED SERVICES ONLY, so base.rules carries no per-service guard at all. That is what removes
+   the class of fault this chapter was written for: a guard cannot name a flag that does not exist
+   if there is no guard.
+   """
+   bodies = {'inbound': [], 'outbound': []}
+   for (direction, name), record in sorted(load_catalogue(base_directory).items()):
+      if not config.get(direction, {}).get(name):
+         continue
+      relative = family + '/' + direction + '/' + name + '.rules'
+      handwritten = first_existing(base_directory + '/templates/' + relative,
+                                   SHIPPED + '/templates/' + relative)
+      # HOW THE TRAFFIC IS SELECTED, and there are two answers. Almost every service is chosen by
+      # a port; outbound tor and btc are chosen by the owner of the local socket, which no port
+      # can express. Both produce a jump and a reply from the SAME record, which is the whole of
+      # ch8-4 — whichever way a service is selected, its two directions are written once.
+      if record.get('selector'):
+         matches = [record['selector']]
+      else:
+         matches = [protocol + ' dport ' + str(port)
+                    for protocol, port in record_ports(record, family)]
+      jumps = [match + ' jump ACCEPT_' + name.upper() for match in matches]
+
+      # THE REPLY IS DERIVED UNLESS THE RECORD SAYS OTHERWISE, and exactly one record says
+      # otherwise. Everywhere else a service's answer is a conntrack reply on what it selected on,
+      # which is why deriving it is safe. DHCP is answered from an address the request never
+      # named, so its reply arrives NEW or INVALID and a rule asking for ESTABLISHED never fires —
+      # it needs a real accept, and its record carries that rule verbatim rather than being bent
+      # into the general shape.
+      replies = record.get('reply_' + family, record.get('reply'))
+      if replies is None:
+         replies = [(record['selector'] if record.get('selector')
+                     else protocol + ' sport ' + str(port)) + ' ct state established accept'
+                    for protocol, port in (record_ports(record, family)
+                                           if not record.get('selector') else [(None, None)])]
+
+      bodies[direction].append({
+         'name': name,
+         'upper': name.upper(),
+         'jumps': jumps,
+         'replies': replies,
+         'include': relative if os.path.exists(handwritten) else None,
+         'body': None if os.path.exists(handwritten) else render_service(family, record),
+      })
+   return bodies
+
+def record_ports(record, family):
+   """This family's protocol/port pairs, which are not always the other family's.
+
+   `outbound.dhcp` is udp/67 on ipv4 and udp/547 on ipv6, because DHCPv6 is a different protocol on
+   a different port. Flattening that to one list would have silently broken v6 DHCP - the migration
+   only found it because it refused to proceed when two families disagreed by anything it did not
+   understand. A record may override its ports per family, and exactly one does.
+   """
+   pairs = record.get('ports_' + family, record['ports'])
+   return [(pair.split('/')[0], int(pair.split('/')[1])) for pair in pairs]
+
+def render_service(family, record):
+   """One service's rules, for one family, in the shape the package's own templates use.
+
+   BOTH FAMILIES ALWAYS (ch2-6). What differs between them is two tokens - the set's address type
+   and the saddr selector - and getting the second wrong is not a rule that matches nothing but a
+   parse error, which is how this package's ipv6 ruleset spent years not loading.
+
+   ONE RENDERER, TWO CALLERS. The catalogue renders through this and so does `add-service`, so a
+   service somebody adds cannot come out in a different shape from one that shipped. That is ch2-7
+   held by construction rather than by a test comparing two code paths.
    """
    addr = 'ipv4_addr' if family == 'ipv4' else 'ipv6_addr'
    saddr = 'ip saddr' if family == 'ipv4' else 'ip6 saddr'
-   title = service.upper()
+   service = record['name']
+   title = record.get('title') or (service.upper() + ' Rules')
+   posture = record.get('posture')
+   ports = record_ports(record, family)
    limited = posture in ('enforce', 'instrument')
+
+   description = ''
+   if record.get('description'):
+      # `{family}` is the ONE substitution a record's prose may make, and it exists because
+      # wireguard's note points at its own family's counterpart. Anything richer would make the
+      # catalogue a second template language, which is what this chapter is removing.
+      for line in record['description'].format(family=family).rstrip('\n').split('\n'):
+         description += ('  #' + line).rstrip() + '\n'
+      # The banner closes with a bare `#` before its rule, which is the shape every hand-written
+      # header with prose already has.
+      description += '  #\n'
 
    # The unlimited shape is ntp.rules': header, one blank line, chain. The limited one is
    # postgres.rules': the set declarations between them, and two blank lines before the chain.
-   sets = LIMIT_SETS.format(title=title, service=service, addr=addr) if limited else ''
+   sets = (LIMIT_SETS.format(label=service.upper(), service=service, addr=addr)
+           if limited else '')
 
    note = ''
    if limited:
-      # THE ARGUMENT IS THE OPERATOR'S AND THE NUMBERS ARE NOT. `--because` is why this posture
-      # rather than the other one, which is the question only they can answer (ch2-4). The rates
-      # below are this package's starting values and nothing has measured what this service's
-      # legitimate traffic looks like - so they are named as unmeasured rather than presented as a
-      # verdict, which is ch1-U2 arriving at authoring time instead of being discovered later.
-      note = ('    ##\n'
-              '    # LIMIT POSTURE: ' + posture + ' — ' + because + '\n'
-              '    #\n'
-              '    # The rates are starting values and nothing has measured this service\'s own\n'
-              '    # legitimate traffic against them (ch1-U2). Change them where the argument\n'
-              '    # above says they are wrong.\n'
-              '    #\n')
+      # THE ARGUMENT IS THE OPERATOR'S AND THE NUMBERS ARE NOT. `because` is why this posture
+      # rather than the other one, which is the question only a person can answer (ch2-4). The
+      # rate and count are values this package inherited by copying one template to make the next,
+      # and ch8-U1 is the first time they have been visible in one table to be argued about.
+      argument = record.get('because', '').rstrip('\n').split('\n')
+      note = '    ##\n    # LIMIT POSTURE: ' + posture + ' — ' + argument[0] + '\n'
+      for line in argument[1:]:
+         note += ('    # ' + line).rstrip() + '\n'
+      note += '    #\n'
 
    rules = ''
+   verdict = 'drop' if posture == 'enforce' else 'continue'
+   over = 'over ' if posture == 'enforce' else ''
    for protocol, port in ports:
-      if posture == 'enforce':
+      if limited:
          rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' update @' + service
-                   + '_rate_limit { ' + saddr + ' limit rate over 50/minute } drop\n')
+                   + '_rate_limit { ' + saddr + ' limit rate ' + over + record['rate'] + ' } '
+                   + verdict + '\n')
          rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' add @' + service
-                   + '_connection_limit { ' + saddr + ' ct count over 200 } drop\n')
-      elif posture == 'instrument':
-         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' update @' + service
-                   + '_rate_limit { ' + saddr + ' limit rate 5/minute } continue\n')
-         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' add @' + service
-                   + '_connection_limit { ' + saddr + ' ct count over 20 } continue\n')
+                   + '_connection_limit { ' + saddr + ' ct count over ' + str(record['count'])
+                   + ' } ' + verdict + '\n')
       rules += ('    ct state new,established ' + protocol + ' dport ' + str(port) + ' accept\n')
 
-   return SERVICE_TEMPLATE.format(title=title, upper=title, sets=sets, posture=note, rules=rules)
-
-def insert_after_last(lines, pattern, new_line):
-   """Put a line after the last one of its own kind, or refuse to guess.
-
-   Every list this touches in base.rules is a run of one-line entries, so 'after the last of these'
-   is the only placement that does not need the file's structure parsed. Refusing when the run is
-   not found matters more than it looks: silently appending to the end of a Jinja template puts the
-   line outside the table it belonged in, and the failure surfaces as nft rejecting a ruleset while
-   a firewall is being brought up.
-   """
-   found = [number for number, line in enumerate(lines) if re.search(pattern, line)]
-   if not found:
-      sys.exit('base.rules has no line matching ' + pattern + ', so there is no run of entries to '
-               'add to and this cannot place the wiring without guessing. Nothing was written.')
-   lines.insert(found[-1] + 1, new_line)
-
-def wire_service(base_directory, family, side, service, ports):
-   """Make the template reachable: an include, a jump, and the reply path (ch1-1).
-
-   THE REPLY PATH IS NOT OPTIONAL AND IT LIVES IN THE OTHER DIRECTION'S CHAIN. Both directions
-   default to drop with no blanket `ct state established,related accept` (ch1-1), so an inbound
-   service whose answer nothing admits is a port that accepts a connection and cannot reply to it.
-   That is a dead service rather than a narrower one, which is the posture ch1-1 chose on purpose
-   and the reason this has to write two chains rather than one.
-   """
-   opposite = 'outbound' if side == 'inbound' else 'inbound'
-   path = base_directory + '/templates/' + family + '/base.rules'
-   with open(path) as file:
-      lines = file.readlines()
-
-   guard = '{% if ' + side + '.' + service + ' %}'
-   insert_after_last(lines, r"\{% include '" + family + "/" + side + r"/[^']+\.rules' %\}",
-                     guard + "{% include '" + family + '/' + side + '/' + service
-                     + ".rules' %}{% endif %}\n")
-
-   # The jump goes in the chain for this direction; the reply goes in the other one. Both are
-   # guarded by THIS service's flag, so one switch turns the whole service on and off.
-   for protocol, port in ports:
-      insert_after_last(
-         lines,
-         r"\{% if " + side + r"\.[a-z0-9]+ %\}\s+\w+ dport \d+ jump ACCEPT_",
-         guard + '    ' + protocol + ' dport ' + str(port) + ' jump ACCEPT_'
-         + service.upper() + '{% endif %}\n')
-      insert_after_last(
-         lines,
-         r"\{% if " + side + r"\.[a-z0-9]+ %\}\s+\w+ sport \d+ ct state established accept",
-         guard + '    ' + protocol + ' sport ' + str(port)
-         + ' ct state established accept{% endif %}\n')
-
-   with open(path, 'w') as file:
-      file.writelines(lines)
-   return opposite
+   return SERVICE_TEMPLATE.format(title=title, description=description, sets=sets,
+                                  upper=service.upper(), posture=note, rules=rules)
 
 def add_service(base_directory, service, direction, ports, posture, because):
-   """Write a service's templates in both families, wire them in, and add the flag.
+   """Add a service by adding a record. That is the whole of it (ch8-3).
 
-   NOTHING IS WRITTEN UNTIL EVERYTHING RENDERS. Both families are built in memory first, so a
-   service that fails halfway leaves no half-wired template behind — the state ch2-6 is about is a
-   host with an IPv4 rule and no IPv6 one, and producing it by crashing would be the same fault
-   arriving by a different road.
+   THIS FUNCTION USED TO WRITE FIVE THINGS: a template in each family, an include, a jump, and the
+   reply in the other direction's chain - and the reply was the one easiest to forget, which is
+   why three shipped services were missing one. Now it appends one record and everything else is
+   derived, so the fault it used to be possible to make is not expressible.
+
+   Written to the BASE DIRECTORY's catalogue, never to the shipped one. That is what ch8-9's merge
+   buys: a stranger's service sits in their own file and the package's list keeps arriving with
+   upgrades, instead of the two being the same file and the upgrade being a conflict.
    """
    if not SERVICE_NAME.match(service or ''):
       sys.exit('A service name is lower-case letters and digits only: it becomes a config flag '
                'split on ".", an nft chain called ACCEPT_' + str(service).upper() + ', and a '
-               'filename. "' + str(service) + '" breaks at least one of the three.')
+               'record key. "' + str(service) + '" breaks at least one of the three.')
    if not ports:
       sys.exit('add-service needs at least one --tcp or --udp port. A service with no ports is a '
                'flag that renders an empty chain nothing can reach.')
+   if (direction, service) in load_catalogue(base_directory):
+      sys.exit(direction + '.' + service + ' is already in the catalogue. Edit its record - it is '
+               'an ordinary record (ch2-7) - or pick another name.')
 
-   families = ('ipv4', 'ipv6')
-   existing = [root + '/templates/' + family + '/' + direction + '/' + service + '.rules'
-               for family in families for root in (base_directory, SHIPPED)
-               if os.path.exists(root + '/templates/' + family + '/' + direction + '/'
-                                 + service + '.rules')]
-   if existing:
-      sys.exit(direction + '.' + service + ' already has a template: ' + ', '.join(existing)
-               + '. Edit it by hand — it is an ordinary template (ch2-7) — or pick another name.')
+   record = ['[[service]]',
+             'name = "' + service + '"',
+             'direction = "' + direction + '"',
+             'title = "' + service.upper() + ' Rules"',
+             'ports = [' + ', '.join('"' + p + '/' + str(n) + '"' for p, n in ports) + ']',
+             'posture = "' + posture + '"']
+   if posture in ('enforce', 'instrument'):
+      # The rate and count this package has always used for a service nobody has measured. They
+      # are ch8-U1's subject and the catalogue is where that is now visible.
+      record += ['rate = "' + ('50/minute' if posture == 'enforce' else '5/minute') + '"',
+                 'count = ' + ('200' if posture == 'enforce' else '20'),
+                 'because = """\n' + because.replace('\\', '\\\\') + '\n"""']
 
-   rendered = {family: render_service(family, direction, service, ports, posture, because)
-               for family in families}
-
-   # base.rules HAS TO BE THE BASE DIRECTORY'S COPY, and this is the cost recorded as ch2-U4. The
-   # Jinja loader searches the base directory before the shipped tree, so an edit here wins - and
-   # keeps winning, which means this host stops receiving upstream corrections to base.rules. The
-   # alternative is editing the shipped file and having the next upgrade quietly un-wire the
-   # service. Neither is right; this one at least fails loudly, which is why it says so below.
-   adopted = []
-   for family in families:
-      local = base_directory + '/templates/' + family + '/base.rules'
-      os.makedirs(base_directory + '/templates/' + family + '/' + direction, exist_ok=True)
-      if not os.path.exists(local):
-         shutil.copyfile(SHIPPED + '/templates/' + family + '/base.rules', local)
-         adopted.append(local)
-
-   for family in families:
-      with open(base_directory + '/templates/' + family + '/' + direction + '/' + service
-                + '.rules', 'w') as file:
-         file.write(rendered[family])
-      wire_service(base_directory, family, direction, service, ports)
+   catalogue = base_directory + '/' + CATALOGUE
+   existing = ''
+   if os.path.exists(catalogue):
+      existing = open(catalogue).read().rstrip('\n') + '\n\n'
+   with open(catalogue, 'w') as file:
+      file.write(existing + '\n'.join(record) + '\n')
 
    set_flag(base_directory, direction + '.' + service, 'disable', False)
 
-   # DISABLED ON ARRIVAL, and that is the whole handover. Authoring a template is saying what the
-   # rule WOULD be; switching it on is a separate decision, and it is the one ch3's subcommand
-   # exists to make honestly.
-   warn(direction + '.' + service + ' is written and switched off. Turn it on with '
-        '`afirewall ' + 'enable ' + direction + '.' + service + '` and then `afirewall reload`.')
-   if adopted:
-      warn('base.rules was copied into ' + base_directory + ' to wire this in, so this host now '
-           'uses its own copy and will NOT receive upstream changes to it: '
-           + ', '.join(adopted) + ' (ch2-U4)')
+   # DISABLED ON ARRIVAL, and that is the whole handover. Declaring a service says what its rule
+   # would be; switching it on is a separate decision, and it is the one ch3's subcommand makes
+   # honestly.
+   warn(direction + '.' + service + ' is declared in ' + catalogue + ' and switched off. Turn it '
+        'on with `afirewall enable ' + direction + '.' + service + '` and then `afirewall reload`.')
 
 #: THE SET A FLAG HAS TO BE IN, read off the template tree and never off afirewall.conf.
 #:
@@ -636,7 +688,12 @@ def add_service(base_directory, service, direction, ports, posture, because):
 #: under the base directory has a real flag for it, whether or not the package has ever heard of
 #: the service (ch2-8).
 def known_flags(base_directory):
-   flags = set()
+   # BOTH HOMES A SERVICE CAN HAVE, because ch8-7 leaves two. A record is the ordinary answer and
+   # a hand-written template is the exception, and a flag is real if either exists - so this reads
+   # the catalogue and the template tree and takes the union. Reading only the catalogue would
+   # refuse `outbound.tor`, which is a real service with a real template and deliberately no
+   # record.
+   flags = {direction + '.' + name for direction, name in load_catalogue(base_directory)}
    for root in (base_directory, SHIPPED):
       for family in ('ipv4', 'ipv6'):
          for side in ('inbound', 'outbound'):
@@ -663,9 +720,10 @@ def set_flag(base_directory, flag, value, dry_run):
    """
    flag = flag.lower()
    if flag not in known_flags(base_directory):
-      sys.exit('There is no template behind ' + flag + ', so setting it would write a line that '
-               'survives every reload and governs nothing. That is what `inbound.tor` was. Add a '
-               'template with `afirewall add-service`, or check the spelling.')
+      sys.exit('Nothing declares ' + flag + ' — no record in ' + CATALOGUE + ' and no template — '
+               'so setting it would write a line that survives every reload and governs nothing. '
+               'That is what `inbound.tor` was. Declare it with `afirewall add-service`, or check '
+               'the spelling.')
 
    path = base_directory + '/afirewall.conf'
    with open(path) as file:

@@ -22,23 +22,7 @@
 ###############################################################################
 table ip a-firewall-inbound-ipv4 {
 
-{% if inbound.ssh %}{% include 'ipv4/inbound/ssh.rules' %}{% endif %}
-{% if inbound.smtp %}{% include 'ipv4/inbound/smtp.rules' %}{% endif %}
-{% if inbound.tcp2194 %}{% include 'ipv4/inbound/tcp2194.rules' %}{% endif %}
-{% if inbound.tcp8000 %}{% include 'ipv4/inbound/tcp8000.rules' %}{% endif %}
-{% if inbound.http %}{% include 'ipv4/inbound/http.rules' %}{% endif %}
-{% if inbound.https %}{% include 'ipv4/inbound/https.rules' %}{% endif %}
-{% if inbound.syslogtls %}{% include 'ipv4/inbound/syslogtls.rules' %}{% endif %}
-{% if inbound.baculadirector %}{% include 'ipv4/inbound/baculadirector.rules' %}{% endif %}
-{% if inbound.baculafiledaemon %}{% include 'ipv4/inbound/baculafiledaemon.rules' %}{% endif %}
-{% if inbound.baculastoragedaemon %}{% include 'ipv4/inbound/baculastoragedaemon.rules' %}{% endif %}
-{% if inbound.udp1514 %}{% include 'ipv4/inbound/udp1514.rules' %}{% endif %}
-{% if inbound.orport %}{% include 'ipv4/inbound/orport.rules' %}{% endif %}
-{% if inbound.dirport %}{% include 'ipv4/inbound/dirport.rules' %}{% endif %}
-{% if inbound.btc %}{% include 'ipv4/inbound/btc.rules' %}{% endif %}
-{% if inbound.wireguard %}{% include 'ipv4/inbound/wireguard.rules' %}{% endif %}
-{% if inbound.postgres %}{% include 'ipv4/inbound/postgres.rules' %}{% endif %}
-{% if inbound.udp51821 %}{% include 'ipv4/inbound/udp51821.rules' %}{% endif %}
+{% for s in services.inbound %}{% if s.include %}{% include s.include %}{% else %}{{ s.body }}{% endif %}{% endfor %}
 
 
   #############################################################################
@@ -55,23 +39,8 @@ table ip a-firewall-inbound-ipv4 {
   chain DROP_BY_DEFAULT {
     type filter hook input priority 20; policy drop;
   
-{% if inbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
-{% if inbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
-{% if inbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
-{% if inbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
-{% if inbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
-{% if inbound.https %}    tcp dport 443 jump ACCEPT_HTTPS{% endif %}
-{% if inbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
-{% if inbound.baculadirector %}    tcp dport 9101 jump ACCEPT_BACULADIRECTOR{% endif %}
-{% if inbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
-{% if inbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
-{% if inbound.udp1514 %}    udp dport 1514 jump ACCEPT_UDP1514{% endif %}
-{% if inbound.orport %}    tcp dport 9001 jump ACCEPT_ORPORT{% endif %}
-{% if inbound.dirport %}    tcp dport 9030 jump ACCEPT_DIRPORT{% endif %}
-{% if inbound.btc %}    tcp dport 8333 jump ACCEPT_BTC{% endif %}
-{% if inbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
-{% if inbound.postgres %}    tcp dport 5432 jump ACCEPT_POSTGRES{% endif %}
-{% if inbound.udp51821 %}    udp dport 51821 jump ACCEPT_UDP51821{% endif %}
+{% for s in services.inbound %}{% for j in s.jumps %}    {{ j }}
+{% endfor %}{% endfor %}
 
     # NO `ct state established` HERE, BECAUSE A DHCP REPLY IS NOT RELIABLY A CONNTRACK REPLY.
     # A client that broadcasts or multicasts its request is answered from the server's own unicast
@@ -88,23 +57,8 @@ table ip a-firewall-inbound-ipv4 {
     # it already knows and the tuple matches. So IPv4 was never broken - it works by the CLIENT'S
     # choice of unicast rather than by anything this rule guarantees, and a firewall that depends on
     # which destination a client picks works until the client changes.
-{% if outbound.dhcp %}    udp sport 67 udp dport 68 accept{% endif %}
-{% if outbound.dns %}    udp sport 53 ct state established accept{% endif %}
-{% if outbound.http %}    tcp sport 80 ct state established accept{% endif %}
-{% if outbound.https %}    tcp sport 443 ct state established accept{% endif %}
-{% if outbound.ntp %}    udp sport 123 ct state established accept{% endif %}
-{% if outbound.smtp %}    tcp sport 25 ct state established accept{% endif %}
-{% if outbound.tcp2194 %}    tcp sport 2194 ct state established accept{% endif %}
-{% if outbound.tcp8000 %}    tcp sport 8000 ct state established accept{% endif %}
-{% if outbound.syslogtls %}    tcp sport 6514 ct state established accept{% endif %}
-{% if outbound.baculadirector %}    tcp sport 9101 ct state established accept{% endif %}
-{% if outbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
-{% if outbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
-{% if outbound.udp2514 %}    udp sport 2514 ct state established accept{% endif %}
-{% if outbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
-{% if outbound.tor %}    meta skuid debian-tor ct state established accept{% endif %}
-{% if outbound.btc %}    meta skuid btc ct state established accept{% endif %}
-{% if outbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
+{% for s in services.outbound %}{% for r in s.replies %}    {{ r }}
+{% endfor %}{% endfor %}
 
     ip protocol icmp jump VALID_ICMP
   }
@@ -383,23 +337,7 @@ table ip a-firewall-inbound-ipv4 {
 
 table ip a-firewall-outbound-ipv4 {
 
-{% if outbound.dhcp %}{% include 'ipv4/outbound/dhcp.rules' %}{% endif %}
-{% if outbound.dns %}{% include 'ipv4/outbound/dns.rules' %}{% endif %}
-{% if outbound.http %}{% include 'ipv4/outbound/http.rules' %}{% endif %}
-{% if outbound.https %}{% include 'ipv4/outbound/https.rules' %}{% endif %}
-{% if outbound.ntp %}{% include 'ipv4/outbound/ntp.rules' %}{% endif %}
-{% if outbound.smtp %}{% include 'ipv4/outbound/smtp.rules' %}{% endif %}
-{% if outbound.tcp2194 %}{% include 'ipv4/outbound/tcp2194.rules' %}{% endif %}
-{% if outbound.tcp8000 %}{% include 'ipv4/outbound/tcp8000.rules' %}{% endif %}
-{% if outbound.syslogtls %}{% include 'ipv4/outbound/syslogtls.rules' %}{% endif %}
-{% if outbound.baculadirector %}{% include 'ipv4/outbound/baculadirector.rules' %}{% endif %}
-{% if outbound.baculafiledaemon %}{% include 'ipv4/outbound/baculafiledaemon.rules' %}{% endif %}
-{% if outbound.baculastoragedaemon %}{% include 'ipv4/outbound/baculastoragedaemon.rules' %}{% endif %}
-{% if outbound.udp1514 %}{% include 'ipv4/outbound/udp1514.rules' %}{% endif %}
-{% if outbound.ssh %}{% include 'ipv4/outbound/ssh.rules' %}{% endif %}
-{% if outbound.tor %}{% include 'ipv4/outbound/tor.rules' %}{% endif %}
-{% if outbound.btc %}{% include 'ipv4/outbound/btc.rules' %}{% endif %}
-{% if outbound.wireguard %}{% include 'ipv4/outbound/wireguard.rules' %}{% endif %}
+{% for s in services.outbound %}{% if s.include %}{% include s.include %}{% else %}{{ s.body }}{% endif %}{% endfor %}
 
   #############################################################################
   #
@@ -412,39 +350,11 @@ table ip a-firewall-outbound-ipv4 {
   chain DROP_BY_DEFAULT {
     type filter hook output priority filter; policy drop;
 
-{% if inbound.ssh %}    tcp sport 22 ct state established accept{% endif %}
-{% if inbound.smtp %}    tcp sport 25 ct state established accept{% endif %}
-{% if inbound.tcp2914 %}    tcp sport 2194 ct state established accept{% endif %}
-{% if inbound.http %}    tcp sport 80 ct state established accept{% endif %}
-{% if inbound.https %}    tcp sport 443 ct state established accept{% endif %}
-{% if inbound.syslogtls %}    tcp sport 6514 ct state established accept{% endif %}
-{% if inbound.baculadirector %}    tcp sport 9101 ct state established accept{% endif %}
-{% if inbound.baculafiledaemon %}    tcp sport 9102 ct state established accept{% endif %}
-{% if inbound.baculastoragedaemon %}    tcp sport 9103 ct state established accept{% endif %}
-{% if inbound.udp1514 %}    udp sport 1514 ct state established accept{% endif %}
-{% if inbound.orport %}    tcp sport 9001 ct state established accept{% endif %}
-{% if inbound.dirport %}    tcp sport 9030 ct state established accept{% endif %}
-{% if inbound.btc %}    tcp sport 8333 ct state established accept{% endif %}
-{% if inbound.wireguard %}    udp sport 51820 ct state established accept{% endif %}
-{% if inbound.postgres %}    tcp sport 5432 ct state established accept{% endif %}
-{% if inbound.udp51821 %}    udp sport 51821 ct state established accept{% endif %}
+{% for s in services.inbound %}{% for r in s.replies %}    {{ r }}
+{% endfor %}{% endfor %}
 
-{% if outbound.dhcp %}    udp dport 67 jump ACCEPT_DHCP{% endif %}
-{% if outbound.dns %}    udp dport 53 jump ACCEPT_DNS{% endif %}
-{% if outbound.http %}    tcp dport 80 jump ACCEPT_HTTP{% endif %}
-{% if outbound.https %}    tcp dport 443 jump ACCEPT_HTTPS{% endif %}
-{% if outbound.ntp %}    udp dport 123 jump ACCEPT_NTP{% endif %}
-{% if outbound.smtp %}    tcp dport 25 jump ACCEPT_SMTP{% endif %}
-{% if outbound.tcp2194 %}    tcp dport 2194 jump ACCEPT_TCP2194{% endif %}
-{% if outbound.tcp8000 %}    tcp dport 8000 jump ACCEPT_TCP8000{% endif %}
-{% if outbound.syslogtls %}    tcp dport 6514 jump ACCEPT_SYSLOGTLS{% endif %}
-{% if outbound.baculadirector %}    tcp dport 9101 jump ACCEPT_BACULADIRECTOR{% endif %}
-{% if outbound.baculafiledaemon %}    tcp dport 9102 jump ACCEPT_BACULAFILEDAEMON{% endif %}
-{% if outbound.baculastoragedaemon %}    tcp dport 9103 jump ACCEPT_BACULASTORAGEDAEMON{% endif %}
-{% if outbound.ssh %}    tcp dport 22 jump ACCEPT_SSH{% endif %}
-{% if outbound.tor %}    meta skuid debian-tor jump ACCEPT_TOR{% endif %}
-{% if outbound.btc %}    meta skuid btc jump ACCEPT_BTC{% endif %}
-{% if outbound.wireguard %}    udp dport 51820 jump ACCEPT_WIREGUARD{% endif %}
+{% for s in services.outbound %}{% for j in s.jumps %}    {{ j }}
+{% endfor %}{% endfor %}
 
     ip protocol icmp jump VALID_ICMP
   }

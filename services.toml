@@ -1,0 +1,465 @@
+# THE CATALOGUE. One record per service per direction, and the single place a service's name
+# exists — see spec/diagrams/chapter-08-declaration.md. The wiring in base.rules is derived
+# from these, so adding a service here is the whole of adding a service.
+#
+# `because` is chapter 1's argument for the posture and is not decoration: a limit-bearing
+# record without one is refused. The rate and count are NOT argued anywhere and never were —
+# they were inherited from whichever template was copied to make the next one, and seeing them
+# in one table is the first time that has been visible. That is ch8-U1.
+#
+# Two services are absent on purpose: outbound tor and btc select on `meta skuid` rather than a
+# port and keep their hand-written templates (ch8-6, ch8-7).
+
+[[service]]
+name = "baculadirector"
+direction = "inbound"
+title = "Bacula Director Rules"
+ports = ["tcp/9101"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+recorded as what the rules do, not as an argued choice.
+
+NOTHING HAS EXERCISED THIS TEMPLATE. It ships with the package and has no traffic behind
+it, so the posture below is inherited from the templates beside it rather than chosen. If
+you deploy bacula, make the argument against its own behaviour before believing this.
+"""
+
+[[service]]
+name = "baculafiledaemon"
+direction = "inbound"
+title = "Bacula File Daemon Rules"
+ports = ["tcp/9102"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+recorded as what the rules do, not as an argued choice.
+
+NOTHING HAS EXERCISED THIS TEMPLATE. It ships with the package and has no traffic behind
+it, so the posture below is inherited from the templates beside it rather than chosen. If
+you deploy bacula, make the argument against its own behaviour before believing this.
+"""
+
+[[service]]
+name = "baculastoragedaemon"
+direction = "inbound"
+title = "Baculs Storage Daemon Rules"
+ports = ["tcp/9103"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+recorded as what the rules do, not as an argued choice.
+
+NOTHING HAS EXERCISED THIS TEMPLATE. It ships with the package and has no traffic behind
+it, so the posture below is inherited from the templates beside it rather than chosen. If
+you deploy bacula, make the argument against its own behaviour before believing this.
+"""
+
+[[service]]
+name = "btc"
+direction = "inbound"
+title = "BTC Rules"
+ports = ["tcp/8333"]
+posture = "enforce"
+rate = "50/minute"
+count = 200
+because = """
+the counterparty is anonymous, self-replacing, and does not
+share its address with anyone who matters.
+
+The source is forgeable, so this is the third branch of ch1-3 rather than the easy one:
+what makes enforcing safe is not that the address is trustworthy but that refusing it
+costs nothing. A bitcoin node holds on the order of a hundred inbound peers and replaces
+a lost one within minutes, so the collateral of a wrong drop is one interchangeable peer
+for the 90s this set holds it — unlike ssh, smtp or syslog, where the party refused is
+one the operator chose and cannot substitute. A legitimate peer opens about one
+connection, three orders of magnitude under these limits, so a real peer never reaches
+them. What enforcing buys is concrete: without it, one address may hold 200+ concurrent
+connections and occupy the daemon's inbound slots by itself.
+"""
+
+[[service]]
+name = "dirport"
+direction = "inbound"
+title = "Tor DirPort Rules"
+description = """
+ The directory port. Deprecated in current Tor - a relay that publishes directory data now
+ generally serves it over its ORPort instead - so this is here to be left off, and exists
+ separately so that leaving it off does not also close the ORPort.
+"""
+ports = ["tcp/9030"]
+posture = "enforce"
+rate = "50/minute"
+count = 200
+because = """
+the counterparty is anonymous, self-replacing, and does not
+share its address with anyone who matters.
+
+Same argument as the ORPort beside it: the source is forgeable, but a directory client
+refused here is interchangeable and reconnects, so the collateral of a wrong drop is
+nobody the operator chose. Note that this flag is meant to be left disabled — current Tor
+serves directory data over the ORPort — so the posture matters mainly for being correct
+if it is ever turned on.
+"""
+
+[[service]]
+name = "http"
+direction = "inbound"
+title = "HTTP Rules"
+ports = ["tcp/80"]
+posture = "instrument"
+rate = "50/minute"
+count = 200
+because = """
+a per-source bound is a bound on a crowd, not on a client.
+
+A CGNAT range or an office behind one address shares this allowance, so a limit tight
+enough to matter refuses legitimate readers before it refuses anything else. Nothing in
+HTTP bounds a legitimate rate from above either: one page load opens several
+connections and a reader can reload. Counted and admitted.
+"""
+
+[[service]]
+name = "https"
+direction = "inbound"
+title = "HTTPS Rules"
+ports = ["tcp/443"]
+posture = "instrument"
+rate = "50/minute"
+count = 200
+because = """
+a per-source bound is a bound on a crowd, not on a client.
+
+A CGNAT range or an office behind one address shares this allowance, so a limit tight
+enough to matter refuses legitimate readers before it refuses anything else. Nothing in
+HTTPS bounds a legitimate rate from above either: one page load opens several
+connections and a reader can reload. Counted and admitted.
+"""
+
+[[service]]
+name = "orport"
+direction = "inbound"
+title = "Tor ORPort Rules"
+description = """
+ The relay port, which other relays and clients connect to. Split from DirPort because a
+ relay routinely runs one without the other: DirPort is deprecated in current Tor, and
+ relays that still publish directory data mostly serve it over the ORPort. A port nobody
+ needs open should not be opened by the same switch as one that is.
+"""
+ports = ["tcp/9001"]
+posture = "enforce"
+rate = "50/minute"
+count = 200
+because = """
+the counterparty is anonymous, self-replacing, and does not
+share its address with anyone who matters.
+
+The source is forgeable, so this is the third branch of ch1-3 rather than the easy one:
+what makes enforcing safe is not that the address is trustworthy but that refusing it
+costs nothing. Tor is redundant by design — a relay or client refused here reconnects,
+or reaches the network by another path — so the collateral of a wrong drop is one
+interchangeable peer for as long as the set holds it, unlike ssh, smtp or syslog where
+the party refused is one the operator chose. A legitimate peer's rate sits far under these
+limits, and what enforcing buys is that a single address cannot occupy the relay by
+itself.
+"""
+
+[[service]]
+name = "postgres"
+direction = "inbound"
+title = "POSTGRES Rules"
+ports = ["tcp/5432"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+the client is a host the operator chose and cannot substitute,
+so a limit that drops would hand anyone able to forge a SYN the power to cut a named
+application off its database. The legitimate rate is bounded - a pooled client opens a
+handful of connections and holds them - which makes enforcing available and still wrong,
+for the same reason syslog's is.
+"""
+
+[[service]]
+name = "smtp"
+direction = "inbound"
+title = "SMTP Rules"
+ports = ["tcp/25"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+the collateral is a named correspondent, and it is aimable.
+
+Enforcing would hand anyone able to forge a SYN the ability to defer mail from one
+chosen sender for the 900s this set holds them. SMTP's own retry makes a drop
+recoverable rather than fatal, which is the honest argument for enforcing here — but a
+large sender's legitimate burst is not bounded below 5/minute, so the rule would refuse
+real mail before it refused abuse. Counted and admitted.
+"""
+
+[[service]]
+name = "ssh"
+direction = "inbound"
+title = "SSH Rules"
+ports = ["tcp/22"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+the administrative path is the one service an operator cannot
+afford to lose, and a limit that drops is a limit an attacker aims.
+"""
+
+[[service]]
+name = "syslogtls"
+direction = "inbound"
+title = "Ssylog TLS Rules"
+ports = ["tcp/6514"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+this port carries the evidence.
+
+The legitimate rate genuinely is bounded: a shipper opens one connection and holds it,
+so 5/minute is orders of magnitude clear of anything real, and enforcing is available.
+It is still the wrong answer. A limit that drops can be aimed at exactly the host an
+attacker is working on, and silencing that host's logs is the point of the exercise. A
+rule that lets a stranger suppress an audit trail on demand is worse than no rule.
+"""
+
+[[service]]
+name = "tcp2194"
+direction = "inbound"
+title = "TCP 2194 Rules"
+ports = ["tcp/2194"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+the authentication is what keeps strangers out, not this.
+
+2194 is unassigned at IANA, so a host answering on it is running something whose clients
+it knows by name rather than something the internet dials. Where the transport
+authenticates before it carries anything, the handshake is what refuses a stranger, not
+this. Enforcing would add exactly one capability — anyone able to forge a known client's
+address can lock that client out — and none the authentication does not already have.
+"""
+
+[[service]]
+name = "tcp8000"
+direction = "inbound"
+title = "TCP 8000 Rules — a check-in collector"
+description = """
+ Where a fleet pushes a heartbeat to one collector and the ABSENCE of one raises
+ the alarm, this port carries the signal that says the others are still working.
+ Inbound is wanted only on the collector; a host that merely checks in needs the
+ outbound half.
+"""
+ports = ["tcp/8000"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+enforcing would let a stranger manufacture alarms.
+
+Where absence of a heartbeat raises the alarm, a limit that drops turns a
+forged flood into an alert for a host that is perfectly healthy. An alarm anybody can
+induce is an alarm the operator learns to ignore, and losing the alerting system's
+credibility costs more than accepting the flood does.
+"""
+
+[[service]]
+name = "udp1514"
+direction = "inbound"
+title = "UDP 1514 Rules"
+ports = ["udp/1514"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+this port carries the evidence, over a transport with no
+handshake to survive.
+
+UDP source addresses cost nothing to forge, so an enforcing limit here could be aimed at
+any shipper by anyone at all: the attacker never has to receive a reply. Silencing the
+logs of the host being attacked is the point of the exercise, and a rule that offers
+that on demand is worse than no rule. Counted and admitted.
+"""
+
+[[service]]
+name = "udp51821"
+direction = "inbound"
+title = "UDP 51821 Rules"
+description = """
+ A second WireGuard instance, on a port that is not the default. A host that runs more than
+ one tunnel needs a second listener, and 51820 is already spoken for; the number here is
+ arbitrary and the template is named for it rather than for whatever the tunnel carries.
+"""
+ports = ["udp/51821"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+the same argument as inbound.wireguard, and for the same
+reasons.
+
+WireGuard answers load with a cookie, which is a rate defence that can still tell a real
+peer from a forged one; this rule cannot. The source is UDP and costs nothing to forge,
+and a peer on a tunnel is one the operator chose rather than one of a crowd — so a limit
+that drops would let anyone silence exactly the tunnel the rule exists to protect.
+"""
+
+[[service]]
+name = "wireguard"
+direction = "inbound"
+title = "WireGuard Rules"
+description = """
+ Symmetric with the outbound template, and only one half of it runs here.
+
+ A WireGuard peer whose address moves cannot be dialled, so the peer with the dynamic
+ address has to be the one that initiates - it is the only side that always knows where
+ the other one is. That makes the fixed-address side purely dialled: it listens, it
+ replies, and it never originates. So on a host of that shape only `inbound.wireguard`
+ is ever enabled, and the outbound template sits unused until the host becomes a dialer.
+
+ Which side a host is is not something a firewall can detect, so both exist and the
+ config picks. See templates/{family}/outbound/wireguard.rules.
+"""
+ports = ["udp/51820"]
+posture = "instrument"
+rate = "5/minute"
+count = 20
+because = """
+WireGuard already refuses load better than a packet filter
+can, and this rule is keyed on an address that legitimately moves.
+
+Under pressure WireGuard answers with a cookie: a rate defence that can still tell a
+real peer from a forged one, which nothing here can do. And the peer on this key is the
+dialer, whose address is dynamic by the design recorded above — so enforcing would spend
+a renumbered peer's allowance on forged traffic and refuse the very tunnel the rule
+exists for. Counted and admitted.
+"""
+
+[[service]]
+name = "baculadirector"
+direction = "outbound"
+title = "Outbound Bacula Director Rules"
+ports = ["tcp/9101"]
+
+[[service]]
+name = "baculafiledaemon"
+direction = "outbound"
+title = "Outbound Bacula File Daemon Rules"
+ports = ["tcp/9102"]
+
+[[service]]
+name = "baculastoragedaemon"
+direction = "outbound"
+title = "Outbound Bacula Storage Daemon Rules"
+ports = ["tcp/9103"]
+
+[[service]]
+name = "dhcp"
+direction = "outbound"
+title = "Allow Outbound DHCP"
+ports = ["udp/67"]
+ports_ipv6 = ["udp/547"]
+# THE ONE SERVICE WHOSE REPLY IS NOT A CONNTRACK REPLY, and the only reason `reply` exists. A
+# client that broadcasts its request is answered from the server's own unicast address, so the
+# tuples do not match, the reply arrives INVALID or NEW, and a rule asking for ESTABLISHED never
+# fires. Deriving this one like every other reply produced exactly that rule, and the migration
+# only caught it because the old and new rulesets were diffed rather than reasoned about.
+reply = ["udp sport 67 udp dport 68 accept"]
+reply_ipv6 = ["udp sport 547 udp dport 546 accept"]
+
+[[service]]
+name = "dns"
+direction = "outbound"
+title = "Outobound DNS rules"
+ports = ["udp/53"]
+
+[[service]]
+name = "http"
+direction = "outbound"
+title = "Outbound HTTP Rules"
+ports = ["tcp/80"]
+
+[[service]]
+name = "https"
+direction = "outbound"
+title = "Outbound HTTPS Rules"
+ports = ["tcp/443"]
+
+[[service]]
+name = "ntp"
+direction = "outbound"
+title = "Outobound DNS rules"
+ports = ["udp/123"]
+
+[[service]]
+name = "smtp"
+direction = "outbound"
+title = "Outbound SMTP Rules"
+ports = ["tcp/25"]
+
+[[service]]
+name = "ssh"
+direction = "outbound"
+title = "Outbound SSH Rules"
+ports = ["tcp/22"]
+
+[[service]]
+name = "syslogtls"
+direction = "outbound"
+title = "Outbound Syslog TLS Rules"
+ports = ["tcp/6514"]
+
+[[service]]
+name = "tcp2194"
+direction = "outbound"
+title = "Outbound TCP 2194 Rules"
+ports = ["tcp/2194"]
+
+[[service]]
+name = "tcp8000"
+direction = "outbound"
+title = "Outbound TCP 8000 Rules — checking in to a collector"
+ports = ["tcp/8000"]
+
+[[service]]
+name = "udp1514"
+direction = "outbound"
+title = "Outbound UDP 1514 Rules"
+ports = ["udp/1514"]
+
+[[service]]
+name = "wireguard"
+direction = "outbound"
+title = "Outbound WireGuard Rules"
+description = """
+ For the peer that dials. Enable this where the host initiates the tunnel - which is
+ the peer whose own address is dynamic, since it is the only one that can reliably find
+ the other end. A host that is dialled needs the inbound template and not this one.
+"""
+ports = ["udp/51820"]
+
+# THE TWO THE RECORD CANNOT FULLY SAY (ch8-6, ch8-7). Both select on the local socket's owner
+# rather than a port, carry one set rather than two, put the rate inline rather than in a set, and
+# order their rules the other way round — four differences, not one. So their BODY stays a
+# hand-written template and only the wiring is derived here, which is the escape hatch doing
+# exactly what it is for: a record still exists, so the jump and the reply still come from one
+# place and still cannot disagree.
+[[service]]
+name = "tor"
+direction = "outbound"
+selector = "meta skuid debian-tor"
+
+[[service]]
+name = "btc"
+direction = "outbound"
+selector = "meta skuid btc"
