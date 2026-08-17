@@ -9,12 +9,15 @@ which is evidence, not the lack of it.
 
 import pathlib
 import re
+import sys
 
 import pytest
 
 from undrilled import unwatched
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from afirewall import afirewall  # noqa: E402
 MAIN = ROOT / "afirewall" / "afirewall.py"
 
 #: Where a stated external interface would be read from. THE PATH IS NOT THE POINT — what matters
@@ -140,3 +143,47 @@ def test_the_rules_land_on_the_interface_the_operator_meant():
     unwatched("ch6-8", "a host with a tunnel, a bridge and a NIC, with its default route moved to "
                        "the tunnel, checked for which interface the SPOOFING chain names — which "
                        "is ch6-U2 and needs a disposable host rather than a reading here")
+
+
+@pytest.mark.proves("ch6-9", depth="unit")
+def test_a_host_can_say_its_private_space_is_bigger_than_its_subnet():
+    """The spoof chain subtracts the interface's own network, which is right for a host whose
+    tunnel is its own interface and wrong for one behind a router that terminates the tunnel.
+
+    MEASURED ON a host BEFORE IT COST ANYTHING, 2026-08-17. Every live connection to the deployment's log
+    collector, backup server and alerter arrived from 203.0.113.0/24 on the ORDINARY LAN
+    interface — the a router router terminates the tunnel and forwards, so the packets reach a host
+    already decapsulated with a private source from a subnet it is not on. Its computed spoof list
+    contained 203.0.113.0/21. Rolling the firewall out would have dropped syslog, borg and every
+    alerter check-in from all seven VPS hosts, at priority raw, ahead of any accept rule.
+
+    Silence still means the interface's own subnet and nothing else, which is what keeps every host
+    that does not need this working without saying anything.
+    """
+    import tempfile
+    from ipaddress import ip_network
+    interface = afirewall.Interface("198.51.100.20", "198.51.100.0/24", "eno1",
+                                    afirewall.Family.IPV4.value)
+    tunnel = ip_network("203.0.113.0/24")
+
+    caught = lambda nets: any(tunnel.subnet_of(n) for n in nets)
+    assert caught(afirewall.get_spoofed_networks(str(ROOT), interface)), (
+        "with nothing stated, a private subnet this host is not on is expected to be dropped — if "
+        "it is not, this test is no longer measuring anything")
+
+    with tempfile.TemporaryDirectory() as base:
+        (pathlib.Path(base) / "lists").symlink_to(ROOT / "lists")
+        (pathlib.Path(base) / "local_networks.conf").write_text("203.0.113.0/21\n")
+        nets = afirewall.get_spoofed_networks(base, interface)
+        assert not caught(nets), (
+            "a network the operator stated as legitimately reaching this host is still in the "
+            "spoof list, so the rule drops traffic the configuration says to accept")
+        assert any(n == ip_network("10.0.0.0/8") for n in nets), (
+            "stating one network removed others: 10.0.0.0/8 is unrelated and must still be dropped")
+
+        (pathlib.Path(base) / "local_networks.conf").write_text("not-a-network\n")
+        with pytest.raises(SystemExit) as refused:
+            afirewall.get_spoofed_networks(base, interface)
+        assert "not a network" in str(refused.value), (
+            "a line that does not parse was skipped rather than refused, which produces a host "
+            f"dropping traffic its own config admits: {refused.value}")
