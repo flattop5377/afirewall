@@ -63,6 +63,14 @@ deletes exactly the tables afirewall owns - the inbound and outbound pair in eac
 forward pair where something forwarded is enabled - and never flushes the ruleset, so rules another
 tool put there are left alone
 
+.OP "counters"
+print what the sanity chains have stopped, both address families side by side.  Reads the kernel and
+changes nothing, so it needs root and needs no configuration - a host whose \fI/etc/afirewall\fR is
+gone can still be asked what its firewall has refused.  A \fB-\fR means that counter is not loaded,
+which is not a zero.  \fBA ZERO IS NOT A CLEAN BILL OF HEALTH\fR: it means nothing of that kind
+arrived, or the rule cannot be reached, or something upstream dropped it first, and nothing on the
+host distinguishes them.
+
 .OP "test"
 tests the syntax of all the files and availability of network interfaces but will not enable the firewall
 

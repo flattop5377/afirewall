@@ -82,6 +82,65 @@ SHIPPED = '/usr/share/afirewall'
 #: Where the rendered ruleset goes. See process_scripts for why it is not the base directory.
 GENERATED = '/var/lib/afirewall'
 
+#: WHAT EACH COUNTER IS ACTUALLY COUNTING, in words rather than in a constant's name. The kernel
+#: names are what the templates emit and what `nft` prints; nobody should have to translate
+#: NUMBER_OF_PORT_ZERO_SEGMENTS_DROPPED in their head to read a diagnostic.
+COUNTER_LABELS = (
+   ('NUMBER_OF_SPOOFS_DROPPED', 'source could not have arrived here'),
+   ('NUMBER_OF_NOT_LOCAL_DROPPED', 'not addressed to this host'),
+   ('NUMBER_OF_INVALID_FLAGS_DROPPED', 'TCP flags RFC 9293 forbids'),
+   ('NUMBER_OF_FRAGMENTS_DROPPED', 'non-first fragments'),
+   ('NUMBER_OF_PORT_ZERO_SEGMENTS_DROPPED', 'port zero, either direction'),
+)
+
+def show_counters(nft):
+   """Print what the sanity chains have actually stopped, both families side by side.
+
+   SIDE BY SIDE BECAUSE THAT IS WHERE THE ASYMMETRIES ARE. Every defect this package found in its
+   own sanity chains during August 2026 was one family differing from the other - ipv6 spoofing at
+   the wrong priority, ipv6 with no fragment chain at all, ipv4's fragment chain behind defrag -
+   and `nft list counters` prints the two families in separate blocks a screen apart, which is
+   exactly the layout that hides it.
+
+   A ZERO IS NOT A CLEAN BILL OF HEALTH and the footer says so, because that misreading is the one
+   this package has actually made. It has three causes and this display cannot tell them apart:
+   nothing of that kind arrived, the rule cannot be reached, or something upstream dropped it
+   first. `tools/lab.py` is what distinguishes them, by sending the traffic on purpose.
+   """
+   done = subprocess.run(args=[nft, '-j', 'list', 'counters'], capture_output=True, encoding='UTF-8')
+   if done.returncode != 0:
+      sys.exit('could not read the counters from ' + nft + ': ' + done.stderr.strip())
+   found = {}
+   for obj in json.loads(done.stdout).get('nftables', []):
+      counter = obj.get('counter')
+      if counter and counter.get('table', '').startswith('a-firewall-'):
+         # Keyed on the table so inbound and outbound cannot be summed into one another; both
+         # define NUMBER_OF_INVALID_FLAGS_DROPPED and only one of them ever moves.
+         found[(counter['table'], counter['name'])] = counter['packets']
+   if not found:
+      sys.exit('no afirewall counters are loaded, so this host is not running a ruleset this '
+               'package built. `afirewall reload` builds one; `nft list tables` says what is there.')
+
+   for direction in ('inbound', 'outbound', 'forward'):
+      rows = [(label, found.get(('a-firewall-' + direction + '-ipv4', name)),
+                      found.get(('a-firewall-' + direction + '-ipv6', name)))
+              for name, label in COUNTER_LABELS]
+      rows = [r for r in rows if r[1] is not None or r[2] is not None]
+      if not rows:
+         continue
+      print('\n{d}{pad}{v4:>12}{v6:>12}'.format(d=direction, pad=' ' * (36 - len(direction)),
+                                                v4='ipv4', v6='ipv6'))
+      for label, four, six in rows:
+         # A counter absent from a family is not zero. ipv6 has no FRAGMENTS chain on a host whose
+         # package predates it, and printing 0 there would claim it looked and saw nothing.
+         print('  {l:<34}{f:>12}{s:>12}'.format(
+            l=label, f='-' if four is None else four, s='-' if six is None else six))
+
+   print('\nA zero has three causes and this cannot tell them apart: nothing of that kind '
+         'arrived,\nthe rule cannot be reached, or something upstream dropped it first. `-` means '
+         'the counter\nis not loaded at all. tools/lab.py settles it by sending the traffic on '
+         'purpose.')
+
 def first_existing(*paths):
    """The first of these that is there, or the last as the thing to complain about."""
    for path in paths:
@@ -350,7 +409,7 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
    # `restart`, `reload` and `force-reload` are never sent by netfilter-persistent at all. They
    # exist here for a person or a configuration manager, so they are aliases of `regenerate`, which
    # is what somebody typing them after editing afirewall.conf means.
-   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service', 'enable', 'disable'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two. enable/disable set one flag in afirewall.conf and report what changed')
+   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service', 'enable', 'disable', 'counters'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two. enable/disable set one flag in afirewall.conf and report what changed; counters shows what the sanity chains have stopped')
    parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits. enable/disable: the flag to set, as <inbound|outbound>.<service>')
    # A DRY RUN IS THE COMMAND'S JOB AND NOT THE CALLER'S (ch3-3). ansible's --check does not run a
    # `command:` at all: it returns rc 0 with empty stdout and a register that is DEFINED, so a play
@@ -440,6 +499,13 @@ def parse_arguments():
    ip_completed = subprocess.run(args=[args.ip, '-V'], capture_output=True, encoding='UTF-8')
    pattern = re.compile('ip utility.*')
    if not pattern.match(ip_completed.stdout): sys.exit(args.ip + ' doesn\'t appear to be ip?')
+
+   # COUNTERS ASKS THE KERNEL AND READS NO CONFIGURATION, so it stops here. It needs nft to be
+   # real - checked above - and needs nothing under the base directory, and requiring one would
+   # mean a host whose /etc/afirewall is gone could not be asked what its firewall has stopped,
+   # which is exactly when somebody wants to know.
+   if args.command == 'counters':
+      return args
 
    if not os.access(args.basedir, mode=os.R_OK): sys.exit('Base configuration directory ' + args.basedir + ' can\'t be opened')
 
@@ -982,6 +1048,14 @@ def main():
    if args.command in ('enable', 'disable'):
       set_flag(args.basedir, args.service,
                'enable' if args.command == 'enable' else 'disable', args.dry_run)
+      sys.exit(0)
+
+   # READS THE KERNEL, SO IT NEEDS ROOT, and it is placed with the commands that do rather than
+   # with enable/disable which only edit a file. It changes nothing, which is why it sits before
+   # everything that does.
+   if args.command == 'counters':
+      if os.geteuid() != 0: sys.exit('Reading the counters needs root: they live in the kernel.')
+      show_counters(args.nft)
       sys.exit(0)
 
    if os.geteuid() != 0: sys.exit('Root permissions required.')
