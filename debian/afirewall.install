@@ -21,3 +21,11 @@ afirewall/afirewall.py => /usr/sbin/afirewall
 # upgrades may do.
 lists usr/share/afirewall
 templates usr/share/afirewall
+# THE CATALOGUE, AND THE PACKAGE IS INERT WITHOUT IT. Since chapter 8 every service is a record in
+# services.toml and base.rules loops over them, so a package that shipped the templates and not
+# this one would render a firewall with no services at all - and would do it quietly, because an
+# empty loop is not an error. It belongs beside templates and lists for the same reason they are
+# there: it is the package's, revised as the package learns things, and an admin who needs a
+# different record puts one in /etc/afirewall/services.toml, where it MERGES over this rather than
+# replacing it.
+services.toml usr/share/afirewall
