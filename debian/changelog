@@ -1,3 +1,17 @@
+afirewall (20260817.4.0-1) unstable; urgency=medium
+
+  * NEW: local_networks.conf. A host behind a router that terminates a tunnel
+    receives private traffic on its ordinary LAN interface, from subnets it is
+    not on - and the anti-spoofing rules dropped it, because they subtract only
+    the network the external interface sits on. List those networks here, one
+    CIDR per line, and they are subtracted too. Silence keeps the previous
+    behaviour exactly, so a host that does not need this needs no file.
+    If you run this on a machine that is reached over a tunnel somebody else
+    terminates - a LAN server behind a VPN router - check your spoof drops
+    before assuming you were unaffected.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Mon, 17 Aug 2026 17:38:29 -0600
+
 afirewall (20260817.3.0-1) unstable; urgency=medium
 
   * A HOST COULD NOT TALK TO ITSELF, and this fixes it. Loopback traffic
