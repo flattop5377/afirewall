@@ -950,7 +950,22 @@ def get_interfaces(base_directory):
          warn('no ' + family.name + ' interface found: ' + absent)
    return interfaces
 
-if __name__ == "__main__":
+def main():
+   """The entry point, and it exists for a reason that outlived the one it was written for.
+
+   THIS FILE HAD NO CALLABLE ENTRY POINT AT ALL - it ended in `if __name__ == "__main__":` with
+   eighty-nine lines under it. The Python deliverable wanted one for `[project.scripts]`, and that
+   deliverable was retired on 2026-08-17; what did not retire is that `plumb.toml` could name no
+   production entry point either, so grounding never ran and every behavioural subject in this
+   repository read `passed-wiring-not-verified`. Grounding is what catches orphaned code, and a
+   package that cannot be entered cannot be asked.
+
+   `global args` because it IS one: `stop`, `start` and `test` all read `args.nft` off the module
+   rather than being passed it. Moving this body into a function without that line makes `args`
+   local, every one of those reads finds the name unbound, and the failure arrives inside the
+   firewall rather than at the parse.
+   """
+   global args
    args = parse_arguments()
 
    # The root check sits AFTER parsing and BEFORE anything that reaches the kernel, rather than at
@@ -1039,3 +1054,7 @@ if __name__ == "__main__":
          stop()
       case 'test':
          generate()
+
+
+if __name__ == "__main__":
+   main()
