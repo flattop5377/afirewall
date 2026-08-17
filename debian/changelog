@@ -1,3 +1,37 @@
+afirewall (20260817.1.0-1) unstable; urgency=medium
+
+  * NEW: afirewall counters. What the sanity chains have actually stopped -
+    forged sources, TCP flag combinations RFC 9293 forbids, fragments, port
+    zero - printed with both address families side by side, because that is
+    where the asymmetries between them show up and `nft list counters` puts
+    the two a screen apart. It reads the kernel, so it needs root, and reads
+    no configuration, so a host whose /etc/afirewall is gone can still be
+    asked what its firewall has refused.
+    A `-` means that counter is not loaded, which is NOT a zero: a host still
+    running 20260816.3.0-1 shows `-` for IPv6 fragments because that release
+    has no such chain.
+    AND A ZERO IS NOT A CLEAN BILL OF HEALTH. It has three causes and nothing
+    on the host can tell them apart: nothing of that kind arrived, the rule
+    cannot be reached, or something upstream dropped it first.
+  * NEW: afirewall counters --json, one object on standard output for
+    something that consumes the numbers. Each record carries its own label
+    and both packets and bytes; a counter that is not loaded has no record at
+    all, so a consumer can tell "the rule is not there" from "the rule saw
+    nothing".
+  * Internal, and mentioned because it changes nothing you can see: the
+    program gained a main() and stopped passing its parsed options around as
+    a module global, two functions that nothing called were deleted, and the
+    Python packaging metadata was retired - it built no wheel, and almost
+    everything this package installs is a conffile, a plugin in another
+    package's directory, data under /usr/share and a manpage, none of which a
+    wheel can own. The Debian package is unaffected; it never used them.
+  * The manpage is now stamped with the version and date by the release
+    itself. Written by hand it was stale by construction, and it described
+    add-service as writing a rules template, which it stopped doing in
+    20260817.0.0.
+
+ -- Flattop5377 <Flattop5377@proton.me>  Mon, 17 Aug 2026 16:24:09 -0600
+
 afirewall (20260817.0.0-1) unstable; urgency=medium
 
   * THREE SERVICES WERE DEAD OR HALF-DEAD AND ARE NOW FIXED. inbound.tcp2194
