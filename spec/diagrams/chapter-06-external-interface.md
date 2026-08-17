@@ -43,13 +43,15 @@ flowchart TD
     GUESS[ch6-5 · no · discover it, so one NIC<br/>needs no configuration at all]:::process
     REFUSE[ch6-6 · a named interface that is not there<br/>is refused, not quietly ignored]:::process
     ANYWAY[ch6-7 · and one protection names<br/>no interface at all]:::process
+    REACH[ch6-9 · and where private traffic may<br/>legitimately come FROM]:::process
     OUT([ch6-8 · anti-spoofing applied where<br/>the operator meant it]):::output
 
     HOST --> STATED
     STATED -->|yes| READ
     STATED -->|no| GUESS
     READ --> SEP
-    SEP --> REFUSE
+    SEP --> REACH
+    REACH --> REFUSE
     GUESS --> ANYWAY
     REFUSE --> ANYWAY
     ANYWAY --> OUT
@@ -71,6 +73,7 @@ flowchart TD
 | `ch6-5` | no · discover it | **A host with one interface must still need no configuration.** That is what the package is for, and the discovery it already does is right for it — measured right on eight hosts out of eight. Silence means *use the default route*, which keeps every existing installation working unchanged and makes this feature cost nothing to the people who do not need it |
 | `ch6-6` | a named interface that is not there is refused | **The failure mode of a wrong statement must not be a silently misapplied rule**, which is the entire complaint against guessing. If the file names an interface the host does not have, generation stops and says so — it does not fall back to discovery, because a fallback would turn a typo into the exact silent wrongness this chapter exists to remove. Loud and refusing beats quiet and plausible |
 | `ch6-7` | and one protection names no interface at all | **`ufw`'s check, taken alongside rather than instead** — a drop for anything not addressed to this host, `fib daddr type` in nft, what `addrtype --dst-type LOCAL` does for ufw. **The claim here is narrower than this row first made it**, and writing the rule is what showed that: it does *not* compensate for a wrongly stated interface, because a spoofed packet is still addressed to us and passes it. What is true is that it needs no interface named, so its correctness does not depend on the trust statement being right — two protections, not a protection and its fallback. One asks whether a source could have arrived where it did; the other whether the packet was ever for us. It carries a named counter, because on a normal host the routing decision has already sent everything addressed elsewhere to the forward hook, and a drop rule that never fires looks exactly like one that is working |
+| `ch6-9` | and where private traffic may legitimately come from | **Naming the interface is not enough when the tunnel is not on it.** The spoof chain drops private sources arriving on the external device, minus the network that device sits on — which is exactly right for a host whose tunnel is its own interface, because the traffic it carries never touches the external one. **A host behind a router that terminates the tunnel receives those packets already decapsulated, on its ordinary LAN interface, from a subnet it is not on**, and the interface qualification cannot tell them apart. `local_networks.conf` lets that host say so, one CIDR per line, and every stated network is subtracted from the spoof list like the interface's own. **Measured on a host before it cost anything, 2026-08-17**: every live connection to the deployment's log collector, backup server and alerter came from `203.0.113.0/24`, and its computed spoof list held `203.0.113.0/21` — so rolling the firewall out would have dropped syslog, borg and every alerter check-in from all seven VPS hosts, at priority raw, ahead of any accept rule. **It is not a trust list and the name says so**: `ch1-U9` already records that "external" is a judgement the routing table cannot make, and this file makes none — it states where traffic may come from, which is a fact about topology only the operator holds. Silence means the interface's own subnet and nothing else, so a host that does not need it says nothing |
 | `ch6-8` | anti-spoofing applied where the operator meant it | **The measure is that a host with a tunnel, a bridge and a NIC filters the NIC** — not that the configuration is richer. A firewall that protects the wrong interface is worse than one that protects none, because the first is believed |
 
 ## Input → process → output
