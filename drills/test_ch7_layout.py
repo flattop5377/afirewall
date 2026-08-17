@@ -141,7 +141,11 @@ def test_the_manual_describes_the_layout_that_exists():
     fact, and a reader who follows it finds an empty directory."""
     manual = (ROOT / "doc" / "man" / "afirewall.8").read_text()
     install = packaging("debian/afirewall.install")
-    claimed = sorted(set(re.findall(r"/usr/share/afirewall/[a-z]+", manual)))
+    # A DOT IS PART OF THE NAME. This matched `[a-z]+` and stopped at the first dot, so the moment
+    # the manual described a FILE rather than a directory it asked the install list for `services`
+    # and was told nothing installs it — a red drill about a line that was there all along. It read
+    # correctly for as long as everything under this path happened to be a directory.
+    claimed = sorted(set(re.findall(r"/usr/share/afirewall/[a-z][a-z.]*[a-z]", manual)))
     for path in claimed:
         leaf = path.rsplit("/", 1)[1]
         assert re.search(rf"^{leaf}\s+usr/share/afirewall\s*$", install, re.M), (

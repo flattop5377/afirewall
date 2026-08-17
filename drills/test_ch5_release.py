@@ -26,7 +26,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #:
 #: The list is short on purpose. A file arriving here that nobody declared is how a `save` command
 #: and a manpage came to be written on the packaging branch and never reached master.
-UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml"}
+#: EMPTY, AND THAT IS THE CLAIM RATHER THAN AN OVERSIGHT (2026-08-17). This held the files that
+#: made afirewall deliverable as a Python project, and that deliverable was retired: nothing ever
+#: built a wheel, `debian/rules` does not select pybuild, the built .deb has no dist-packages, and
+#: almost everything this package IS - a conffile, a netfilter-persistent plugin, templates under
+#: /usr/share, a manpage - lives where a wheel cannot put it.
+#:
+#: upstream/latest survives because gbp needs it: `debian/gbp.conf` names it as the upstream branch,
+#: the orig tarball is built from it and pristine-tar regenerates that tarball byte-identically. So
+#: the layer's job is to BE the source at a tag, and a layer that adds nothing is exactly what that
+#: job wants. The set stays as the mechanism, at zero, so declaring something later is one edit
+#: rather than a rewrite.
+UPSTREAM_ONLY = set()
 
 
 def git(*args):
@@ -117,13 +128,16 @@ def test_master_carries_the_software_and_upstream_carries_a_declared_few_more():
         "keeping them off master is what lets the source move without a packaging decision "
         "attached, and collapsing that boundary is how the licence file got two homes.")
 
-    # Layer two adds exactly its own files to layer one, and nothing else.
+    # Layer two adds NOTHING to layer one, which is what its job asks of it: gbp builds the orig
+    # tarball from this branch, so anything here that master does not have ships in a tarball the
+    # source cannot account for.
     have("upstream/latest")
     unexpected = sorted((tree("upstream/latest") - tree("master")) - UPSTREAM_ONLY)
     assert not unexpected, (
-        f"upstream/latest holds files master does not and that nobody declared: {unexpected}. "
-        f"The declared list is {sorted(UPSTREAM_ONLY)} — either add to it deliberately, or the "
-        "file belongs on master.")
+        f"upstream/latest holds files master does not: {unexpected}. That branch is the source at "
+        "a tag - gbp builds the orig tarball from it - so a file here and not on master ships in a "
+        "tarball the source cannot account for. Put it on master, or declare it in UPSTREAM_ONLY "
+        "deliberately.")
 
 
 @pytest.mark.proves("ch5-3", depth="structural")
@@ -149,7 +163,14 @@ def test_the_deliverable_layer_is_only_ever_authored_for_its_own_files():
     for line in [ln for ln in out.splitlines() if ln]:
         sha = line.split()[0]
         touched, _ = git("show", "--name-only", "--format=", sha)
-        outside = sorted(set(f for f in touched.splitlines() if f) - UPSTREAM_ONLY)
+        # RETIRING A FILE THAT ONLY EVER LIVED HERE IS NOT AUTHORING ONE. A file this layer owned
+        # can only be deleted on this layer, so the commit that removes it must be made here — and
+        # it leaves nothing for master to be missing, which is the harm this rule exists to
+        # prevent. Paths gone from BOTH branches are dropped for that reason; anything still
+        # present is judged as before. Found when the Python deliverable was retired and the only
+        # possible commit doing it read as a violation.
+        present = tree("master") | tree("upstream/latest")
+        outside = sorted(set(f for f in touched.splitlines() if f) & present - UPSTREAM_ONLY)
         if outside:
             strayed.append(f"{line}\n      touches {outside}")
     assert not strayed, (
@@ -158,6 +179,38 @@ def test_the_deliverable_layer_is_only_ever_authored_for_its_own_files():
         + f"\n\nupstream/latest adds {sorted(UPSTREAM_ONLY)} to the source and nothing else. "
           "Anything else changed here does not reach master, and the next release has to reconcile "
           "the two rather than merge them.")
+
+
+@pytest.mark.proves("ch5-3", depth="structural")
+def test_no_shared_file_differs_between_the_layers():
+    """The state the drill above cannot see, and the reason it is a SECOND test rather than a
+    stricter first one.
+
+    `test_the_deliverable_layer_is_only_ever_authored_for_its_own_files` asks whether anybody has
+    strayed SINCE the last release, which is right for commits and blind to what straying already
+    left behind — and every release resets that boundary, so a violation that survives one cut
+    becomes permanently invisible. `requirements.txt` was authored on upstream/latest in April 2025,
+    fell behind the boundary, and sat diverged for sixteen months until both layers moved in the
+    same release and it conflicted.
+
+    THIS ASKS ABOUT NOW INSTEAD OF ABOUT HISTORY. A file the layers disagree about is a merge
+    conflict waiting for the next release, whenever it was created and whoever created it, and a
+    question about the present cannot be aged out.
+
+    It is not the same claim as the one above wearing a different scope: that one is about
+    discipline and this one is about state, and a repository can pass either while failing the
+    other. Both cite ch5-3 because a layer that only authors its own files and a layer whose shared
+    files match are the two halves of one boundary being real.
+    """
+    have("master"); have("upstream/latest")
+    out, _ = git("diff", "--name-only", "master", "upstream/latest")
+    diverged = sorted(f for f in out.splitlines() if f and f not in UPSTREAM_ONLY)
+    assert not diverged, (
+        f"master and upstream/latest disagree about {len(diverged)} file(s) that neither layer "
+        f"owns exclusively:\n  " + "\n  ".join(diverged)
+        + f"\n\nOnly {sorted(UPSTREAM_ONLY)} may differ. Anything else here will conflict at the "
+          "next release that touches it — decide which layer owns it and make the other match, or "
+          "declare it above if it genuinely belongs to the deliverable layer alone.")
 
 
 @pytest.mark.proves("ch5-4", depth="structural")
