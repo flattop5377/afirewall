@@ -242,6 +242,35 @@ def upgrade_from(tag, basedir):
     return True, None
 
 
+def loopback(port):
+    """Can the target reach a service bound to its own loopback, on a port nothing opens?
+
+    THE CASE THIS LAB DID NOT HAVE, and afirewall shipped without it for its whole life. Loopback
+    traffic crosses input and output like anything else, so `policy drop` on both dropped a host
+    talking to itself - and every case in this file used a port the config DID open, or the veth
+    rather than lo, so nothing here ever asked. Found by surveying a fleet before a rollout rather
+    than by any test: a host runs exim and postgres on 127.0.0.1 and would have lost both.
+
+    Deliberately a port no flag opens. Testing 22 proves the ssh rule, not the loopback rule.
+    """
+    listener = subprocess.Popen(
+        ["ip", "netns", "exec", TARGET, sys.executable, "-c",
+         "import socket,threading,time\n"
+         "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)\n"
+         f"s.bind(('127.0.0.1',{port})); s.listen(1)\n"
+         "threading.Thread(target=lambda:(s.accept()[0].send(b'x'),),daemon=True).start()\n"
+         "time.sleep(6)"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        probe = run("ip", "netns", "exec", TARGET, sys.executable, "-c",
+                    f"import socket; socket.create_connection(('127.0.0.1',{port}),2)",
+                    check=False, timeout=10)
+        return probe.returncode == 0
+    finally:
+        listener.kill()
+        listener.wait()
+
+
 def crossing(port, expect):
     """Can the attacker reach the service namespace on this port, through the target?
 
@@ -336,6 +365,15 @@ def main():
             if not ok:
                 failures.append(f"{name}: {what} — sent, and the counter did not move")
             before = after
+        # THE HOST TALKING TO ITSELF, on a port no flag opens.
+        print()
+        reached = loopback(5432)
+        print(f"  {'PASS' if reached else 'FAIL'}  {'loopback':<62} "
+              "a service on 127.0.0.1 is reachable from its own host")
+        if not reached:
+            failures.append("loopback: a service bound to 127.0.0.1 could not be reached locally, "
+                            "so every host-local service on an unopened port is broken")
+
         # THE CROSSING, WHICH IS THE HOOK NOTHING ELSE IN THIS FILE REACHES (ch4-1).
         print()
         for port, expect, what in (

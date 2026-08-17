@@ -46,6 +46,21 @@ table ip6 a-firewall-inbound-ipv6 {
   chain DROP_BY_DEFAULT {
     type filter hook input priority 20; policy drop;
 
+    ##
+    # THE HOST TALKING TO ITSELF, WHICH THIS PACKAGE REFUSED UNTIL 2026-08-17.
+    #
+    # Loopback traffic traverses input and output like anything else, so `policy drop` on both
+    # dropped it - and a service bound to 127.0.0.1 on a port no flag opens became unreachable
+    # FROM ITS OWN HOST. Measured on a host before the fix: a listener on 127.0.0.1:5432 could not be
+    # connected to locally. That is postgres and a loopback-only exim on the next host due a
+    # rollout, and neither has any business being the firewall's concern.
+    #
+    # `iif lo` and not an address match: the interface is the fact. A packet arriving on lo came
+    # from this machine, and matching 127.0.0.0/8 instead would both miss ::1 and admit a forged
+    # 127.0.0.1 arriving on a real interface - which is what the SPOOFING chain exists to drop and
+    # is why this sits BELOW it rather than above.
+    iif lo accept
+
 {% for s in services.inbound %}{% for j in s.jumps %}    {{ j }}
 {% endfor %}{% endfor %}
 
@@ -384,6 +399,21 @@ table ip6 a-firewall-outbound-ipv6 {
   #############################################################################
   chain DROP_BY_DEFAULT {
     type filter hook output priority filter; policy drop;
+
+    ##
+    # THE OTHER HALF OF THE SAME THING (see the inbound chain).
+    #
+    # Loopback traffic traverses input and output like anything else, so `policy drop` on both
+    # dropped it - and a service bound to 127.0.0.1 on a port no flag opens became unreachable
+    # FROM ITS OWN HOST. Measured on a host before the fix: a listener on 127.0.0.1:5432 could not be
+    # connected to locally. That is postgres and a loopback-only exim on the next host due a
+    # rollout, and neither has any business being the firewall's concern.
+    #
+    # `iif lo` and not an address match: the interface is the fact. A packet arriving on lo came
+    # from this machine, and matching 127.0.0.0/8 instead would both miss ::1 and admit a forged
+    # 127.0.0.1 arriving on a real interface - which is what the SPOOFING chain exists to drop and
+    # is why this sits BELOW it rather than above.
+    oif lo accept
 
 {% for s in services.inbound %}{% for r in s.replies %}    {{ r }}
 {% endfor %}{% endfor %}
