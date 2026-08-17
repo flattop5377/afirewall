@@ -1,9 +1,0 @@
-  #############################################################################
-  #
-  ## Outbound TCP 8000 Rules — checking in to a collector
-  #
-  #############################################################################
-  chain ACCEPT_TCP8000 {
-    ct state new,established tcp dport 8000 accept
-  }
-

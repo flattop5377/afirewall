@@ -47,13 +47,18 @@ def render(family, device='eth0', spoofed=None, inbound=(), outbound=()):
     """Render base.rules the way afirewall does. `inbound`/`outbound` name what to switch
     on; anything unnamed is off, which is what an absent key already renders as."""
     env = Environment(loader=FileSystemLoader('templates'))
+    config = {'inbound': {name: True for name in inbound},
+              'outbound': {name: True for name in outbound}}
+    # THE REAL FUNCTION, not a stand-in. base.rules loops over what this returns (ch8-3), so a
+    # test rendering with a hand-built list would be testing a second implementation of the thing
+    # under test — which is how chapter 2's drills came to pass against a NameError.
     return env.get_template(family + '/base.rules').render(
         EXTERNAL_DEVICE=device,
         EXTERNAL_ADDRESS='203.0.113.7',
         LOCAL_NETWORK='203.0.113.0/24',
         SPOOFED_NETWORKS=SPOOFED[family] if spoofed is None else spoofed,
-        inbound={name: True for name in inbound},
-        outbound={name: True for name in outbound})
+        services=afirewall.service_bodies('.', family, config),
+        **config)
 
 def render_everything(family):
     enabled = services()
@@ -208,64 +213,91 @@ class TestAfirewall(unittest.TestCase):
                 self.assertIn(target, defined,
                               family + ' jumps to ' + target + ', which no chain defines')
 
-    def testEveryIncludeResolvesToAFileThatExists(self):
+    def testEveryServiceBodyResolves(self):
+        """Every enabled service produces either rules or a template that is there.
+
+        base.rules includes a PATH FROM A VARIABLE since chapter 8, so a missing file is no longer
+        something a reader can spot by grepping for `{% include %}` — it is a TemplateNotFound
+        while a firewall is being brought up. This asks the resolver instead of the text."""
+        for family in FAMILIES:
+            every = services()
+            bodies = afirewall.service_bodies(
+                '.', family, {'inbound': {n: True for n in every['inbound']},
+                              'outbound': {n: True for n in every['outbound']}})
+            for direction in ('inbound', 'outbound'):
+                for service in bodies[direction]:
+                    with self.subTest(service=direction + '/' + service['name'], family=family):
+                        if service['include']:
+                            self.assertTrue(os.path.isfile('templates/' + service['include']),
+                                            service['include'] + ' is named and is not there')
+                        else:
+                            self.assertIn('chain ACCEPT_' + service['upper'], service['body'],
+                                          service['name'] + ' rendered no chain')
+
+    def testEveryStaticIncludeResolvesToAFileThatExists(self):
         """An include naming a file that is not there costs nothing until the key guarding it
         is switched on - and then raises TemplateNotFound at the moment somebody is trying to
         bring a firewall up. base.rules carried three of them (orport, dirport, bitcoin, the
-        last a near-miss for btc.rules), each unreachable only because no config key set it."""
+        last a near-miss for btc.rules), each unreachable only because no config key set it.
+
+        SINCE CHAPTER 8 THERE ARE NONE, and their absence is the claim rather than a side effect:
+        `base.rules` names no service at all now (ch8-3), so a per-service include is a line that
+        should not have come back. Any literal include that does appear is still checked, because
+        the next one somebody adds will be the one that is wrong.
+        """
         for family in FAMILIES:
             source = open('templates/' + family + '/base.rules').read()
             included = re.findall(r"\{% include '([^']+)' %\}", source)
-            self.assertTrue(included, family + '/base.rules includes nothing at all')
+            self.assertEqual([], [p for p in included if '/inbound/' in p or '/outbound/' in p],
+                             family + '/base.rules names a service include again; services are '
+                             'reached through their records now (ch8-3)')
             for path in included:
                 self.assertTrue(os.path.isfile('templates/' + path),
                                 family + '/base.rules includes ' + path + ', which is not there')
                 self.assertTrue(path.startswith(family + '/'),
                                 family + '/base.rules includes ' + path + ' from another family')
 
-    def testEveryConfigKeyHasATemplateBehindIt(self):
-        """A key with no template is a switch wired to nothing. Turn it on and either nothing
-        happens - which reads as a firewall rule that is in force and is not - or the include
-        raises TemplateNotFound while a firewall is being brought up. `inbound.bitcoin` was
-        the second kind, a near-miss for the btc.rules that does exist."""
+    def testEveryConfigKeyHasADeclarationBehindIt(self):
+        """A key nothing declares is a switch wired to nothing. Turn it on and nothing happens,
+        which reads as a firewall rule that is in force and is not. `inbound.tor` was one for
+        years, and `inbound.bitcoin` was a near-miss for the btc that does exist.
+
+        ASKED OF THE CATALOGUE SINCE CHAPTER 8, and it is now the ONLY skew left in this area:
+        three files had to agree before, and two do now (ch8-U2)."""
+        catalogue = afirewall.load_catalogue('.')
         declared = services()
         for side in ('inbound', 'outbound'):
             for service in sorted(declared[side]):
-                found = ['templates/{f}/{s}/{n}.rules'.format(f=f, s=side, n=service)
-                         for f in FAMILIES
-                         if os.path.isfile('templates/{f}/{s}/{n}.rules'.format(f=f, s=side, n=service))]
-                self.assertTrue(found,
-                                side + '.' + service + ' is in afirewall.conf with no template '
-                                'in either family')
+                self.assertIn((side, service), catalogue,
+                              side + '.' + service + ' is in afirewall.conf and nothing declares '
+                              'it — no record in services.toml and no template')
 
-    def testEveryTemplateHasAConfigKeyToTurnItOn(self):
-        """The same skew from the other side. A template no key names cannot be switched on,
-        so it is work that looks like coverage and provides none."""
+    def testEveryDeclarationHasAConfigKeyToTurnItOn(self):
+        """The same skew from the other side. A record no key names cannot be switched on, so it
+        is work that looks like coverage and provides none."""
         declared = services()
+        for (side, service) in sorted(afirewall.load_catalogue('.')):
+            self.assertIn(service, declared[side],
+                          side + '.' + service + ' is declared and has no key in afirewall.conf')
+
+    def testEveryHandWrittenTemplateIsClaimedByARecord(self):
+        """The escape hatch's own skew (ch8-7). A template is reached only through the record that
+        names its service, so one lying beside the catalogue with no record is a file the renderer
+        will never open — coverage that provides none, which is what this test always asked.
+
+        It is a much smaller question than it used to be: two templates rather than sixty-six."""
+        catalogue = afirewall.load_catalogue('.')
         for family in FAMILIES:
             for side in ('inbound', 'outbound'):
                 directory = 'templates/{f}/{s}'.format(f=family, s=side)
+                if not os.path.isdir(directory):
+                    continue
                 for name in sorted(os.listdir(directory)):
                     if not name.endswith('.rules'):
                         continue
                     service = name[:-len('.rules')]
-                    self.assertIn(service, declared[side],
-                                  directory + '/' + name + ' has no ' + side + '.' + service +
-                                  ' key in afirewall.conf')
-
-    def testEveryServiceTemplateIsReachable(self):
-        """The other direction: a template nothing includes is a rule set nobody can turn on,
-        which reads as coverage while providing none."""
-        for family in FAMILIES:
-            source = open('templates/' + family + '/base.rules').read()
-            included = set(re.findall(r"\{% include '([^']+)' %\}", source))
-            for side in ('inbound', 'outbound'):
-                directory = 'templates/{family}/{side}'.format(family=family, side=side)
-                for name in sorted(os.listdir(directory)):
-                    if not name.endswith('.rules'):
-                        continue
-                    path = '{family}/{side}/{name}'.format(family=family, side=side, name=name)
-                    self.assertIn(path, included, path + ' exists but nothing includes it')
+                    self.assertIn((side, service), catalogue,
+                                  directory + '/' + name + ' has no record, so nothing reaches it')
 
     def testOutboundLimitsCarryTheirOwnVerdict(self):
         """A limit rule ending in `continue` counts and refuses nothing. When the match fails
@@ -463,21 +495,26 @@ class TestFamilySpecificPorts(unittest.TestCase):
     SAME_IN_BOTH = None          # every service not listed below
     MUST_DIFFER = {'dhcp'}       # 67/68 against 547/546
 
-    def ports(self, path):
-        return sorted(set(re.findall(r'\b[ds]port (\d+)', open(path).read())))
+    def ports(self, text):
+        # Port 0 is PORT_ZERO's, not a service's: that chain is in base.rules on every render and
+        # drops port zero in either direction, so it turns up in anything read off the whole file.
+        return sorted(set(re.findall(r'\b[ds]port (\d+)', text)) - {'0'})
+
+    def rendered(self, family, service, direction='outbound'):
+        """This service alone, as the ruleset actually receives it.
+
+        READ FROM THE RENDERED OUTPUT AND NOT FROM A FILE, since chapter 8: a service's ports live
+        in one record and reach the ruleset through a renderer, so a test reading a template would
+        be asking a file that no longer decides anything.
+        """
+        return render(family, **{direction: [service]})
 
     def testPortsMatchAcrossFamiliesExceptWhereTheyCannot(self):
-        for direction in ('inbound', 'outbound'):
-            base = 'templates/ipv4/' + direction
-            if not os.path.isdir(base):
-                continue
-            for name in sorted(os.listdir(base)):
-                six = 'templates/ipv6/' + direction + '/' + name
-                if not os.path.exists(six):
-                    continue
-                service = name.replace('.rules', '')
-                four_ports, six_ports = self.ports(base + '/' + name), self.ports(six)
-                with self.subTest(service=direction + '/' + service):
+        for (direction, service) in sorted(afirewall.load_catalogue('.')):
+            with self.subTest(service=direction + '/' + service):
+                four_ports = self.ports(self.rendered('ipv4', service, direction))
+                six_ports = self.ports(self.rendered('ipv6', service, direction))
+                if True:
                     if service in self.MUST_DIFFER:
                         self.assertNotEqual(
                             four_ports, six_ports,
@@ -492,8 +529,8 @@ class TestFamilySpecificPorts(unittest.TestCase):
 
     def testDhcpv6UsesTheDhcpv6Ports(self):
         """The specific numbers, because 'differs from IPv4' would also be satisfied by a typo."""
-        self.assertEqual(['547'], self.ports('templates/ipv6/outbound/dhcp.rules'))
-        self.assertEqual(['67'], self.ports('templates/ipv4/outbound/dhcp.rules'))
+        self.assertEqual(['546', '547'], self.ports(self.rendered('ipv6', 'dhcp')))
+        self.assertEqual(['67', '68'], self.ports(self.rendered('ipv4', 'dhcp')))
 
     def testDhcpRepliesDoNotDependOnConntrack(self):
         """The reply to a DHCP request is not reliably the return direction of it.
@@ -520,8 +557,8 @@ class TestFamilySpecificPorts(unittest.TestCase):
         """
         for family, server, client in (('ipv4', '67', '68'), ('ipv6', '547', '546')):
             with self.subTest(family=family):
-                rules = [l.strip() for l in open('templates/' + family + '/base.rules')
-                         if 'outbound.dhcp' in l and 'sport ' + server in l]
+                rules = [l.strip() for l in self.rendered(family, 'dhcp').splitlines()
+                         if 'sport ' + server in l]
                 self.assertTrue(rules, family + ' has no inbound DHCP reply rule at all')
                 for rule in rules:
                     self.assertNotIn(
@@ -541,13 +578,12 @@ class TestFamilySpecificPorts(unittest.TestCase):
         one and not the other a way to lose an address, and nothing would say so.
         """
         for family, server in (('ipv4', '67'), ('ipv6', '547')):
-            lines = [l for l in open('templates/' + family + '/base.rules') if 'outbound.dhcp' in l]
+            lines = self.rendered(family, 'dhcp').splitlines()
             with self.subTest(family=family):
                 self.assertTrue(any('sport ' + server in l for l in lines),
                                 family + ': no inbound half is opened by outbound.dhcp')
                 self.assertTrue(any('dport ' + server in l for l in lines),
                                 family + ': no outbound half is opened by outbound.dhcp')
-                self.assertFalse(any('inbound.dhcp' in l for l in
-                                     open('templates/' + family + '/base.rules')),
+                self.assertNotIn(('inbound', 'dhcp'), afirewall.load_catalogue('.'),
                                  family + ': DHCP has been split across two flags, so enabling one '
                                  'and not the other silently costs the host its address')

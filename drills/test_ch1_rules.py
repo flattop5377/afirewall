@@ -15,6 +15,7 @@ consistency of the set.
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -186,9 +187,15 @@ def test_nothing_reaches_for_iptables():
     citation from a dependency produces exactly the kind of finding this repository spends its time
     disproving, so comments are stripped before the search.
     """
+    NOT_THE_PACKAGE = {".git", "__pycache__", "drills", "spec", ".venv"}
+    # `.venv` IS SOMEBODY'S SITE-PACKAGES AND NOT THIS PACKAGE. The README tells a developer to
+    # create it right here, so this drill was always one `pip install` away from reporting a
+    # dependency's source as afirewall reaching for iptables — and on 2026-08-17 adding scapy did
+    # exactly that. What it found was a library's comment-free mention of a tool this package does
+    # not call, which is the same false finding the docstring above records having fixed once.
     reaching = []
     for path in sorted(ROOT.rglob("*")):
-        if path.is_dir() or {".git", "__pycache__", "drills", "spec"} & set(path.parts):
+        if path.is_dir() or NOT_THE_PACKAGE & set(path.parts):
             continue
         if path.suffix not in (".py", ".rules", ".conf", ".sh") and path.name != "afirewall":
             continue
@@ -234,26 +241,93 @@ def test_every_rule_can_be_defended():
                        "chapter exists to invite and cannot make on its own behalf")
 
 
+# nftables' named priorities, and the two kernel hooks that decide whether a sanity chain is
+# reachable at all. `raw` is ahead of conntrack; DEFRAG is ahead of `raw` and is where a fragment
+# stops being a fragment.
+_RAW = -300
+_CONNTRACK = -200
+_DEFRAG = -400
+_NAMED = {"raw": _RAW, "mangle": -150, "dstnat": -100, "filter": 0, "srcnat": 100}
+
+# `chain NAME {` and then the `type ... hook ... priority ...;` line that follows it.
+_CHAIN = re.compile(r"chain (\w+) \{\s*\n\s*type \w+ hook (\w+) priority (-?\w+);")
+
+
+def _base_chains(family: str) -> dict:
+    """chain name -> (hook, numeric priority), from the INBOUND table of a family's base.rules.
+
+    Scoped to that table deliberately: `INVALID_FLAGS` is defined in both, on `input` here and on
+    `output` next door, so reading the whole file returns the outbound one and an assertion about
+    the sanity chains silently asks about the wrong chain.
+    """
+    text = (ROOT / "templates" / family / "base.rules").read_text()
+    inbound = text.split("-outbound-")[0]
+    return {name: (hook, _NAMED.get(prio, int(prio) if _is_int(prio) else prio))
+            for name, hook, prio in _CHAIN.findall(inbound)}
+
+
+def _is_int(value: str) -> bool:
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
+
+
+# WHAT EACH SANITY CHAIN MUST BE, and the priority is half of it. A chain at the wrong priority is
+# not a weaker rule, it is an absent one, and it looks identical from the template.
+_SANITY = {
+    "SPOOFING": ("input", _RAW),
+    "INVALID_FLAGS": ("input", _RAW),
+    "PORT_ZERO": ("input", _RAW),
+    "FRAGMENTS": ("prerouting", -450),
+}
+
+
 @pytest.mark.proves("ch1-9", depth="structural")
 def test_incoherent_traffic_is_dropped_before_any_flag_is_consulted():
     """The package's other reason to exist, asserted so it cannot be quietly lost.
 
-    These four chains are what a host gets from installing afirewall at all — they run at
-    `priority raw`, ahead of every service decision, and none of them reads the configuration. A
-    flag cannot turn them off and a missing flag cannot bypass them, which is exactly why they are
-    the part that does not need arguing per service.
+    These four chains are what a host gets from installing afirewall at all — they run ahead of
+    every service decision, in both families, and none of them reads the configuration. A flag
+    cannot turn them off and a missing flag cannot bypass them, which is exactly why they are the
+    part that does not need arguing per service.
+
+    THE PRIORITY IS ASSERTED, AND IT IS WHY THIS DRILL WAS REWRITTEN. It used to check that a
+    chain was *defined* and that *some* counted drop existed, while its own docstring said the
+    chains run at `priority raw`. Three things were true underneath it and it read green through
+    all of them: ipv6 SPOOFING was at `mangle` from the genesis commit, ipv6 had no FRAGMENTS
+    chain at all, and the ipv4 FRAGMENTS chain was behind `nf_defrag` and could never fire. It
+    also looped over three chains while the claim named four, which is how the missing one stayed
+    missing.
 
     THE COUNTERS ARE PART OF THE CLAIM, not decoration. `nft list counters` says whether a rule has
     ever fired, so a drop rule that matches nothing is visible rather than assumed — which is the
-    same standard this chapter holds a limit to.
+    same standard this chapter holds a limit to. That only means anything if the chain is somewhere
+    a packet still reaches it, which is what the priority assertions below are for.
     """
     for family in ("ipv4", "ipv6"):
-        text = (ROOT / "templates" / family / "base.rules").read_text()
-        for chain in ("SPOOFING", "INVALID_FLAGS", "PORT_ZERO"):
-            assert f"chain {chain} {{" in text, (
-                f"{family}/base.rules no longer defines {chain}. It runs ahead of every service "
+        found = _base_chains(family)
+        for chain, (hook, priority) in _SANITY.items():
+            assert chain in found, (
+                f"{family}/base.rules does not define {chain}. It runs ahead of every service "
                 "decision and reads no flag, so losing it silently weakens every host that "
-                "installs this package, whatever their configuration says")
+                "installs this package, whatever their configuration says. Both families get all "
+                f"four: ipv6 went without {chain} once, on the reasoning that IPv6 removed "
+                "something it did not remove")
+            assert found[chain] == (hook, priority), (
+                f"{family} {chain} is at {found[chain]}, not {(hook, priority)}. A sanity chain at "
+                "the wrong priority is an absent one that reads present: at `mangle` it runs "
+                "behind conntrack and the packet it drops has already been tracked, and behind "
+                "DEFRAG it is handed a reassembled datagram with no fragment left to match")
+
+        assert found["FRAGMENTS"][1] < _DEFRAG, (
+            f"{family} FRAGMENTS is at {found['FRAGMENTS'][1]}, which is behind nf_defrag at "
+            f"{_DEFRAG}. Every host running these templates asks for conntrack, so defrag is "
+            "registered and reassembly has already happened — the rule cannot match, its counter "
+            "can only read zero, and a zero is indistinguishable from 'no fragments arrived'")
+
+        text = (ROOT / "templates" / family / "base.rules").read_text()
         drops = [line.strip() for line in text.splitlines()
                  if line.strip().endswith("drop") and "counter name" in line]
         assert drops, (
@@ -346,3 +420,45 @@ def test_a_rebooted_host_comes_up_with_its_firewall():
                         "/var/lib/afirewall/ipv4.nft` and all four tables were present, with "
                         "wireguard, the alerter, apt and syslog all working through them. "
                         "Automating it needs the a host fixture this repository keeps deferring")
+
+
+LAB = ROOT / "tools" / "lab.py"
+
+
+@pytest.mark.proves("ch1-11", depth="integration")
+@pytest.mark.proves("ch4-7", depth="integration")
+def test_every_counter_moves_for_the_traffic_that_names_it():
+    """The counters, read against traffic sent on purpose rather than against whatever arrived.
+
+    THIS IS THE DRILL `ch1-9` NEEDED AND DID NOT HAVE. Everything above it reads templates, so it
+    settles the shape of a rule and never whether the rule matches anything. That gap is what let
+    three defects live under a PROVEN claim until 2026-08-17: a chain behind conntrack, a chain
+    that did not exist in one family, and a chain behind `nf_defrag` whose counter could not move.
+
+    It runs the real program against the working tree's templates inside a network namespace, so
+    what is under test is this checkout rather than whatever package the machine has installed.
+    Skipping without root is honest — the lab creates namespaces and loads a ruleset, and neither
+    is available to a normal user. A skip here means nobody has shown the counters fire, which is
+    the same thing `ch1-9` says about a counter that reads zero.
+
+    IT ALSO CARRIES ch4-7, because the lab grew a third namespace and the same run now asks whether
+    a service behind the target is reachable through it. Two claims off one run rather than two
+    runs: the lab is expensive, and a second invocation would be the same evidence spent twice.
+    """
+    if os.geteuid() != 0:
+        pytest.skip("the lab creates network namespaces and loads a ruleset — run the suite as "
+                    "root, or `sudo python3 tools/lab.py` on its own")
+    if not shutil.which("nft"):
+        pytest.skip("nft is not on PATH, so no ruleset can be loaded to fire anything at")
+
+    done = subprocess.run([sys.executable, str(LAB)], capture_output=True, text=True, timeout=300)
+    # 2 IS "THIS MACHINE CANNOT ASK", WHICH IS A SKIP AND NOT A RED. Under `plumb board` this runs
+    # from the repository's .venv, which carries jinja2 and no scapy — so the first version sent
+    # nothing, read eight zero counters and reported eight broken rules against a firewall that
+    # was working. The exit code is what keeps a harness fault from being read as a finding.
+    if done.returncode == 2:
+        pytest.skip(done.stderr.strip())
+    assert done.returncode == 0, (
+        "a sanity chain did not count the traffic that names it. Every packet on that wire was "
+        f"sent by the lab, so a counter that did not move is the rule's fault:\n{done.stdout}\n"
+        f"{done.stderr}")

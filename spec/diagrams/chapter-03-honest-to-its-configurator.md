@@ -9,8 +9,13 @@
 firewalls were rejected not on their filtering but on their administration: they could not be
 provisioned cleanly from ansible. That makes "administrable through ansible" a *requirement* here
 rather than a nice property, and `ch1-2` already records half of it — the config stays a plain flag
-list so a config manager can compose it by appending. This chapter is the other half, and it is the
-half that is missing: **being editable is not the same as being honest.**
+list so a config manager can compose it by appending. This chapter is the other half: **being editable is not the same
+as being honest.**
+
+**The package's half was built on 2026-08-17** — `enable` and `disable` refuse a flag with no
+template, take `--dry-run`, and report one JSON object saying whether anything actually changed.
+What is not done is the consumer's half: all fifteen ansible plays still use `lineinfile`, so
+nothing yet benefits, and whether to migrate them is `ch3-U1`.
 
 **Today a service play writes the config with `lineinfile`, and that idiom is honest about change
 and dishonest about everything else.** It reports *changed* correctly, which is why fifteen plays

@@ -1,9 +1,0 @@
-  #############################################################################
-  #
-  ## Outbound Bacula Director Rules
-  #
-  #############################################################################
-  chain ACCEPT_BACULADIRECTOR {
-    ct state new,established tcp dport 9101 accept
-  }
-

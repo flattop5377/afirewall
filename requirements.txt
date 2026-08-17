@@ -1,3 +1,10 @@
+# BOTH LAYERS MAINTAIN THIS FILE AND THEY DISAGREED. upstream/latest bumps the build tooling and
+# master adds what the software imports, so a release merge conflicts here every time either moves.
+# Resolved by taking the newer pin of each and the union of the two sets - which is what both sides
+# meant - and recorded because "take one side" would have silently dropped jinja2 or downgraded
+# build on alternate releases.
 build==1.2.2.post1
 packaging==25.0
 pyproject_hooks==1.2.0
+jinja2==3.1.5
+scapy==2.6.1
