@@ -261,7 +261,11 @@ def _base_chains(family: str) -> dict:
     the sanity chains silently asks about the wrong chain.
     """
     text = (ROOT / "templates" / family / "base.rules").read_text()
-    inbound = text.split("-outbound-")[0]
+    # SPLIT ON THE TABLE'S DECLARATION, not on its name appearing anywhere. The file opens by
+    # naming every table it is about to replace, so `-outbound-` now occurs above the inbound
+    # table and splitting on the bare string cut the whole thing away - a drill that went red
+    # because a preamble was added above what it reads.
+    inbound = re.split(r"table ip6? a-firewall-outbound-\w+ \{", text)[0]
     return {name: (hook, _NAMED.get(prio, int(prio) if _is_int(prio) else prio))
             for name, hook, prio in _CHAIN.findall(inbound)}
 

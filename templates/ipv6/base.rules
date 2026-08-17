@@ -1,4 +1,29 @@
 ##
+# REPLACE THIS PACKAGE'S TABLES ATOMICALLY, AND DO IT FIRST.
+#
+# `table X` creates it when it is absent and does nothing when it is not; `delete table X` then
+# removes whatever was there. Together they mean this file always starts from nothing of ours and
+# says so to `nft -c`, which is the whole point: validation runs against the kernel as it IS, so
+# without this a chain that changed its hook or priority fails to validate against the copy of
+# itself already loaded.
+#
+# THAT IS NOT HYPOTHETICAL, IT SHIPPED. 20260817.0.0 moved FRAGMENTS from `raw` to -450, and
+# upgrading a host to it produced `Chain "FRAGMENTS" already exists in table ip
+# 'a-firewall-inbound-ipv4' with different declaration` - so `regenerate` refused, correctly left
+# the old firewall running, and the host sat with a new package and its predecessor's rules. Every
+# host upgrading across that change would have done the same.
+#
+# ALL THREE TABLES, INCLUDING THE FORWARD ONE THIS RENDER MAY NOT DECLARE. Naming it here deletes
+# a stale one left by a configuration that used to forward something and no longer does, which
+# nothing else removes short of `afirewall stop`.
+table ip6 a-firewall-inbound-ipv6
+delete table ip6 a-firewall-inbound-ipv6
+table ip6 a-firewall-forward-ipv6
+delete table ip6 a-firewall-forward-ipv6
+table ip6 a-firewall-outbound-ipv6
+delete table ip6 a-firewall-outbound-ipv6
+
+##
 # IPV6 Rules.  These match the IPV4 rules
 #
 #
