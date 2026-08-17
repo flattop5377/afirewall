@@ -419,6 +419,212 @@ def get_configuration():
             config = branch(config, kv[0].split('.'), kv[1])
    return config
 
+#: A SERVICE NAME IS THE FLAG, THE CHAIN AND THE FILENAME AT ONCE, so what it may contain is
+#: decided by the strictest of the three. `inbound.<name>` is split on '.' by get_configuration, the
+#: chain is ACCEPT_<NAME> in nft, and the file is <name>.rules - so a dot, a hyphen or a space each
+#: break something different and none of them break it loudly.
+SERVICE_NAME = re.compile(r'^[a-z0-9]+$')
+
+#: The canonical shape, which is the package's existing one rather than a style this path invents
+#: (ch2-6). A generated template that looked generated would split the package into two dialects,
+#: and ch2-7 is the claim that there is only one.
+#: The spacing is surveyed rather than invented: of the seventeen outbound templates, every one
+#: without limits puts `chain` on the line after the header rule and ends with a trailing blank
+#: line, and the two that carry sets leave two blank lines before the chain. That is why the
+#: blank lines belong to {sets} rather than to this string - an unlimited service has none.
+SERVICE_TEMPLATE = """\
+  #############################################################################
+  #
+  ## {title} Rules
+  #
+  #############################################################################
+{sets}  chain ACCEPT_{upper} {{
+{posture}{rules}  }}
+
+"""
+
+LIMIT_SETS = """
+  ##
+  # {title} rate limit
+  #
+  set {service}_rate_limit {{
+    type {addr}
+    size 65535
+    timeout 900s
+    flags dynamic
+  }}
+
+  ##
+  # {title} connection limit
+  #
+  set {service}_connection_limit {{
+    type {addr}
+    size 65535
+    flags dynamic
+  }}
+
+
+"""
+
+def render_service(family, side, service, ports, posture, because):
+   """One service's template, for one family, in the shape the package already uses.
+
+   BOTH FAMILIES ALWAYS, and the caller enforces it (ch2-6). What differs between them is two
+   tokens - the set's address type and the saddr selector - and getting the second wrong is not a
+   rule that matches nothing but a parse error, which is how this package's ipv6 ruleset spent
+   years not loading.
+   """
+   addr = 'ipv4_addr' if family == 'ipv4' else 'ipv6_addr'
+   saddr = 'ip saddr' if family == 'ipv4' else 'ip6 saddr'
+   title = service.upper()
+   limited = posture in ('enforce', 'instrument')
+
+   # The unlimited shape is ntp.rules': header, one blank line, chain. The limited one is
+   # postgres.rules': the set declarations between them, and two blank lines before the chain.
+   sets = LIMIT_SETS.format(title=title, service=service, addr=addr) if limited else ''
+
+   note = ''
+   if limited:
+      # THE ARGUMENT IS THE OPERATOR'S AND THE NUMBERS ARE NOT. `--because` is why this posture
+      # rather than the other one, which is the question only they can answer (ch2-4). The rates
+      # below are this package's starting values and nothing has measured what this service's
+      # legitimate traffic looks like - so they are named as unmeasured rather than presented as a
+      # verdict, which is ch1-U2 arriving at authoring time instead of being discovered later.
+      note = ('    ##\n'
+              '    # LIMIT POSTURE: ' + posture + ' — ' + because + '\n'
+              '    #\n'
+              '    # The rates are starting values and nothing has measured this service\'s own\n'
+              '    # legitimate traffic against them (ch1-U2). Change them where the argument\n'
+              '    # above says they are wrong.\n'
+              '    #\n')
+
+   rules = ''
+   for protocol, port in ports:
+      if posture == 'enforce':
+         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' update @' + service
+                   + '_rate_limit { ' + saddr + ' limit rate over 50/minute } drop\n')
+         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' add @' + service
+                   + '_connection_limit { ' + saddr + ' ct count over 200 } drop\n')
+      elif posture == 'instrument':
+         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' update @' + service
+                   + '_rate_limit { ' + saddr + ' limit rate 5/minute } continue\n')
+         rules += ('    ct state new ' + protocol + ' dport ' + str(port) + ' add @' + service
+                   + '_connection_limit { ' + saddr + ' ct count over 20 } continue\n')
+      rules += ('    ct state new,established ' + protocol + ' dport ' + str(port) + ' accept\n')
+
+   return SERVICE_TEMPLATE.format(title=title, upper=title, sets=sets, posture=note, rules=rules)
+
+def insert_after_last(lines, pattern, new_line):
+   """Put a line after the last one of its own kind, or refuse to guess.
+
+   Every list this touches in base.rules is a run of one-line entries, so 'after the last of these'
+   is the only placement that does not need the file's structure parsed. Refusing when the run is
+   not found matters more than it looks: silently appending to the end of a Jinja template puts the
+   line outside the table it belonged in, and the failure surfaces as nft rejecting a ruleset while
+   a firewall is being brought up.
+   """
+   found = [number for number, line in enumerate(lines) if re.search(pattern, line)]
+   if not found:
+      sys.exit('base.rules has no line matching ' + pattern + ', so there is no run of entries to '
+               'add to and this cannot place the wiring without guessing. Nothing was written.')
+   lines.insert(found[-1] + 1, new_line)
+
+def wire_service(base_directory, family, side, service, ports):
+   """Make the template reachable: an include, a jump, and the reply path (ch1-1).
+
+   THE REPLY PATH IS NOT OPTIONAL AND IT LIVES IN THE OTHER DIRECTION'S CHAIN. Both directions
+   default to drop with no blanket `ct state established,related accept` (ch1-1), so an inbound
+   service whose answer nothing admits is a port that accepts a connection and cannot reply to it.
+   That is a dead service rather than a narrower one, which is the posture ch1-1 chose on purpose
+   and the reason this has to write two chains rather than one.
+   """
+   opposite = 'outbound' if side == 'inbound' else 'inbound'
+   path = base_directory + '/templates/' + family + '/base.rules'
+   with open(path) as file:
+      lines = file.readlines()
+
+   guard = '{% if ' + side + '.' + service + ' %}'
+   insert_after_last(lines, r"\{% include '" + family + "/" + side + r"/[^']+\.rules' %\}",
+                     guard + "{% include '" + family + '/' + side + '/' + service
+                     + ".rules' %}{% endif %}\n")
+
+   # The jump goes in the chain for this direction; the reply goes in the other one. Both are
+   # guarded by THIS service's flag, so one switch turns the whole service on and off.
+   for protocol, port in ports:
+      insert_after_last(
+         lines,
+         r"\{% if " + side + r"\.[a-z0-9]+ %\}\s+\w+ dport \d+ jump ACCEPT_",
+         guard + '    ' + protocol + ' dport ' + str(port) + ' jump ACCEPT_'
+         + service.upper() + '{% endif %}\n')
+      insert_after_last(
+         lines,
+         r"\{% if " + side + r"\.[a-z0-9]+ %\}\s+\w+ sport \d+ ct state established accept",
+         guard + '    ' + protocol + ' sport ' + str(port)
+         + ' ct state established accept{% endif %}\n')
+
+   with open(path, 'w') as file:
+      file.writelines(lines)
+   return opposite
+
+def add_service(base_directory, service, direction, ports, posture, because):
+   """Write a service's templates in both families, wire them in, and add the flag.
+
+   NOTHING IS WRITTEN UNTIL EVERYTHING RENDERS. Both families are built in memory first, so a
+   service that fails halfway leaves no half-wired template behind — the state ch2-6 is about is a
+   host with an IPv4 rule and no IPv6 one, and producing it by crashing would be the same fault
+   arriving by a different road.
+   """
+   if not SERVICE_NAME.match(service or ''):
+      sys.exit('A service name is lower-case letters and digits only: it becomes a config flag '
+               'split on ".", an nft chain called ACCEPT_' + str(service).upper() + ', and a '
+               'filename. "' + str(service) + '" breaks at least one of the three.')
+   if not ports:
+      sys.exit('add-service needs at least one --tcp or --udp port. A service with no ports is a '
+               'flag that renders an empty chain nothing can reach.')
+
+   families = ('ipv4', 'ipv6')
+   existing = [root + '/templates/' + family + '/' + direction + '/' + service + '.rules'
+               for family in families for root in (base_directory, SHIPPED)
+               if os.path.exists(root + '/templates/' + family + '/' + direction + '/'
+                                 + service + '.rules')]
+   if existing:
+      sys.exit(direction + '.' + service + ' already has a template: ' + ', '.join(existing)
+               + '. Edit it by hand — it is an ordinary template (ch2-7) — or pick another name.')
+
+   rendered = {family: render_service(family, direction, service, ports, posture, because)
+               for family in families}
+
+   # base.rules HAS TO BE THE BASE DIRECTORY'S COPY, and this is the cost recorded as ch2-U4. The
+   # Jinja loader searches the base directory before the shipped tree, so an edit here wins - and
+   # keeps winning, which means this host stops receiving upstream corrections to base.rules. The
+   # alternative is editing the shipped file and having the next upgrade quietly un-wire the
+   # service. Neither is right; this one at least fails loudly, which is why it says so below.
+   adopted = []
+   for family in families:
+      local = base_directory + '/templates/' + family + '/base.rules'
+      os.makedirs(base_directory + '/templates/' + family + '/' + direction, exist_ok=True)
+      if not os.path.exists(local):
+         shutil.copyfile(SHIPPED + '/templates/' + family + '/base.rules', local)
+         adopted.append(local)
+
+   for family in families:
+      with open(base_directory + '/templates/' + family + '/' + direction + '/' + service
+                + '.rules', 'w') as file:
+         file.write(rendered[family])
+      wire_service(base_directory, family, direction, service, ports)
+
+   set_flag(base_directory, direction + '.' + service, 'disable', False)
+
+   # DISABLED ON ARRIVAL, and that is the whole handover. Authoring a template is saying what the
+   # rule WOULD be; switching it on is a separate decision, and it is the one ch3's subcommand
+   # exists to make honestly.
+   warn(direction + '.' + service + ' is written and switched off. Turn it on with '
+        '`afirewall ' + 'enable ' + direction + '.' + service + '` and then `afirewall reload`.')
+   if adopted:
+      warn('base.rules was copied into ' + base_directory + ' to wire this in, so this host now '
+           'uses its own copy and will NOT receive upstream changes to it: '
+           + ', '.join(adopted) + ' (ch2-U4)')
+
 #: THE SET A FLAG HAS TO BE IN, read off the template tree and never off afirewall.conf.
 #:
 #: The conf is the thing being validated, so a validator that trusted it would bless `inbound.tor`

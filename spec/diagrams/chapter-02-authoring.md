@@ -97,6 +97,21 @@ shipped with the package (`ch2-7`).
   the help is how a discoverable subcommand becomes an undiscoverable one. The root check belongs on
   the commands that touch the kernel, not on the parser.
 
+- **ch2-U4 — wiring a new service means editing `base.rules`, and there is no good place to put
+  the edit.** A template is only reachable if `base.rules` includes it and jumps to its chain, and
+  `base.rules` is the package's own file. Editing the shipped copy means the next upgrade silently
+  un-wires the service. Copying it into the base directory means the admin copy wins forever, so
+  this host stops receiving every future correction to `base.rules` — the ipv6 `FRAGMENTS` chain
+  added on 2026-08-17 is exactly the kind it would have missed. **The implementation takes the
+  second and says so at the point of use**, because a loud cost beats a silent one, but neither is
+  right.
+
+  The answer that dissolves it is for `base.rules` to stop naming services one line at a time and
+  discover them instead — a loop over what the template tree holds, so adding a service is adding a
+  file and the wiring is derived rather than written. That is a change to the canonical template
+  and to what every host renders, so it is a decision rather than a refactor, and it has not been
+  taken. Anchored to `ch2-7`.
+
 - **ch2-U2 — nothing decides what happens to a service that needs more than ports.** The existing
   outbound templates key on `meta skuid`, the WireGuard ones carry an argument about dynamic peer
   addresses, and bacula's three templates differ by role rather than by port. A generator that only
