@@ -296,7 +296,44 @@ def get_external_ipv6_interface(destination):
    return get_external_interface(destination, Family.IPV6)
 
 def get_parser():
-   parser = argparse.ArgumentParser(description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux')
+   # THIRTEEN SUBCOMMANDS AND A PERSON NEEDS THREE. The list is flat because argparse gives one
+   # positional, and read cold it offers `restore`, `start`, `restart`, `reload`, `force-reload`,
+   # `stop`, `flush` and `save` with equal weight - eight names netfilter-persistent sends and
+   # nobody types. This package is a shim between ansible, a person, and nft; a front door that
+   # cannot say which three verbs are for the person is the shim failing at its own job.
+   #
+   # An epilog rather than subparsers, because subparsers would change how netfilter-persistent's
+   # own verbs are dispatched to buy a nicer --help, and this file is the plugin it runs.
+   parser = argparse.ArgumentParser(
+      description='Netfilter Persistence Plugin that configures a pure NetFilters Firewall for Linux',
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+      epilog="""\
+the three you will actually type:
+
+  afirewall enable inbound.smtp     open a service, and say whether that changed anything
+  afirewall disable inbound.smtp    close it again
+  afirewall reload                  rebuild the ruleset from the config and load it
+
+  enable and disable only edit the configuration. NOTHING REACHES THE KERNEL UNTIL `reload`.
+
+adding a service this package does not ship:
+
+  afirewall add-service gemini --inbound --tcp 1965 \\
+      --posture enforce --because "an anonymous peer that replaces itself"
+  afirewall enable inbound.gemini
+  afirewall reload
+
+  --posture and --because are required and have no defaults: a rule whose posture nobody
+  chose reads exactly like one somebody argued for.
+
+from a configuration manager:
+
+  enable/disable print one JSON object - {"changed": true, "flag": ..., "was": ..., "now": ...}
+  and exit 0 whether or not anything changed. Gate the reload on `changed`, and pass
+  --dry-run for a check run rather than letting the caller pretend.
+
+everything else on that list is netfilter-persistent's vocabulary - restore, start, restart,
+force-reload, stop, flush, save - and arrives from the system rather than from you.""")
    # TWO REAL ACTIONS, AND SEVEN NAMES FOR THEM, BECAUSE ONLY TWO OF THE NAMES ARE OURS.
    #
    # What this program does is `restore` a saved ruleset or `regenerate` one from the
@@ -674,8 +711,11 @@ def add_service(base_directory, service, direction, ports, posture, because):
    # DISABLED ON ARRIVAL, and that is the whole handover. Declaring a service says what its rule
    # would be; switching it on is a separate decision, and it is the one ch3's subcommand makes
    # honestly.
-   warn(direction + '.' + service + ' is declared in ' + catalogue + ' and switched off. Turn it '
-        'on with `afirewall enable ' + direction + '.' + service + '` and then `afirewall reload`.')
+   # NOT `warn`: nothing is wrong, and a success that prints the word Warning teaches a reader to
+   # discount the word everywhere else in this program.
+   print(direction + '.' + service + ' is declared in ' + catalogue + ' and switched off. Turn it '
+         'on with `afirewall enable ' + direction + '.' + service + '`, then `afirewall reload`.',
+         file=sys.stderr)
 
 #: THE SET A FLAG HAS TO BE IN, read off the template tree and never off afirewall.conf.
 #:
@@ -752,7 +792,23 @@ def set_flag(base_directory, flag, value, dry_run):
       with open(path, 'w') as file:
          file.writelines(lines)
 
-   print(json.dumps({'changed': changed, 'flag': flag, 'was': was, 'now': value}))
+   # FLUSHED, so a person reading a terminal gets the answer before the advice about it. stdout
+   # is block-buffered into a pipe and stderr is not, so without this the nudge below overtakes
+   # the object it is about.
+   print(json.dumps({'changed': changed, 'flag': flag, 'was': was, 'now': value}), flush=True)
+
+   # THE HALF-DONE STATE THIS COMMAND LEAVES, SAID OUT LOUD. `enable` edits the configuration and
+   # touches no kernel, so somebody who runs it and walks away has changed nothing that filters a
+   # packet - and the JSON says `changed: true`, which is true about the file and easy to read as
+   # true about the firewall. On stderr so it cannot corrupt the object a configuration manager
+   # parses, and only when something changed, so a converged run stays quiet (ch3-7).
+   #
+   # NOT WHEN A FLAG ARRIVES ALREADY OFF. `add-service` writes its new flag as `disable`, which
+   # changes the file and opens nothing, so telling that person to reload would be advice to do
+   # nothing - and advice to do nothing is how the useful warnings stop being read.
+   if changed and not dry_run and (value == 'enable' or was == 'enable'):
+      warn(flag + ' is ' + value + 'd in the configuration and the kernel has not been told. '
+           'Run `afirewall reload` to apply it.')
 
 def users_a_service_matches(base_directory, service):
    """Which system users a service's rules match on, read out of the rules themselves.
