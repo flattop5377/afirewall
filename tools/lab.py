@@ -205,6 +205,72 @@ def scapy_interpreter():
     return None
 
 
+def upgrade_from(tag, basedir):
+    """Load the ruleset the PREVIOUS RELEASE built, then let this tree replace it in place.
+
+    THIS EXISTS BECAUSE IT SHOULD HAVE EXISTED SOONER. 20260817.0.0 moved the fragment chain to a
+    new hook priority and shipped; the first host to take it could not apply it, because `nft -c`
+    validates against the kernel as it is and a changed chain is checked against the copy of itself
+    already loaded. Two releases went out before a deployment found it — and a namespace that could
+    have found it in seconds was sitting right here, testing only that a ruleset loads onto a bare
+    kernel.
+
+    A firewall is upgraded far more often than it is installed, so loading onto nothing is the case
+    that matters least. This renders the previous release's templates from git, loads them, and
+    then does exactly what an upgrade does.
+    """
+    previous = pathlib.Path(basedir) / "previous"
+    export = subprocess.run(["git", "-C", str(ROOT), "archive", tag], capture_output=True)
+    if export.returncode != 0:
+        return None, f"no such release tag as {tag}"
+    previous.mkdir()
+    subprocess.run(["tar", "-x", "-C", str(previous)], input=export.stdout, check=True)
+    if not (previous / "templates").is_dir():
+        return None, f"{tag} has no templates to render"
+
+    generated = pathlib.Path(basedir) / "was"
+    generated.mkdir()
+    script = (f"mkdir -p /var/lib/afirewall && mount --bind {generated} /var/lib/afirewall && "
+              f"{sys.executable} {previous}/afirewall/afirewall.py -b {previous} regenerate")
+    done = run("ip", "netns", "exec", TARGET, "unshare", "-m", "sh", "-c", script, check=False)
+    if done.returncode != 0:
+        return None, f"the previous release would not build its own ruleset: {done.stderr.strip()}"
+    for nft in sorted(generated.glob("ipv[46].nft")):
+        loaded = run("nft", "-f", str(nft), ns=TARGET, check=False)
+        if loaded.returncode != 0:
+            return None, f"could not load {tag}'s ruleset: {loaded.stderr.strip()}"
+    return True, None
+
+
+def loopback(port):
+    """Can the target reach a service bound to its own loopback, on a port nothing opens?
+
+    THE CASE THIS LAB DID NOT HAVE, and afirewall shipped without it for its whole life. Loopback
+    traffic crosses input and output like anything else, so `policy drop` on both dropped a host
+    talking to itself - and every case in this file used a port the config DID open, or the veth
+    rather than lo, so nothing here ever asked. Found by surveying a fleet before a rollout rather
+    than by any test: a host runs exim and postgres on 127.0.0.1 and would have lost both.
+
+    Deliberately a port no flag opens. Testing 22 proves the ssh rule, not the loopback rule.
+    """
+    listener = subprocess.Popen(
+        ["ip", "netns", "exec", TARGET, sys.executable, "-c",
+         "import socket,threading,time\n"
+         "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)\n"
+         f"s.bind(('127.0.0.1',{port})); s.listen(1)\n"
+         "threading.Thread(target=lambda:(s.accept()[0].send(b'x'),),daemon=True).start()\n"
+         "time.sleep(6)"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        probe = run("ip", "netns", "exec", TARGET, sys.executable, "-c",
+                    f"import socket; socket.create_connection(('127.0.0.1',{port}),2)",
+                    check=False, timeout=10)
+        return probe.returncode == 0
+    finally:
+        listener.kill()
+        listener.wait()
+
+
 def crossing(port, expect):
     """Can the attacker reach the service namespace on this port, through the target?
 
@@ -272,6 +338,19 @@ def main():
     failures = []
     try:
         setup()
+
+        # THE UPGRADE, BEFORE ANYTHING ELSE, so the rest of this run happens on a host that was
+        # already running a firewall rather than on a bare kernel.
+        tags = subprocess.run(["git", "-C", str(ROOT), "tag", "--list", "upstream/latest/*",
+                               "--sort=-version:refname"], capture_output=True, text=True)
+        previous = next((t for t in tags.stdout.split() if t), None)
+        if previous:
+            ok, why = upgrade_from(previous, basedir)
+            print(f"  {'PASS' if ok else 'FAIL'}  {'upgrade':<62} "
+                  f"{previous.rsplit('/', 1)[1]}'s ruleset loaded first")
+            if not ok:
+                failures.append(f"upgrade from {previous}: {why}")
+
         print(load_ruleset(basedir).strip())
         chains = run("nft", "list", "tables", ns=TARGET).stdout.split("\n")
         print(f"\nlab up — {len([c for c in chains if c.strip()])} tables in {TARGET}\n")
@@ -286,6 +365,15 @@ def main():
             if not ok:
                 failures.append(f"{name}: {what} — sent, and the counter did not move")
             before = after
+        # THE HOST TALKING TO ITSELF, on a port no flag opens.
+        print()
+        reached = loopback(5432)
+        print(f"  {'PASS' if reached else 'FAIL'}  {'loopback':<62} "
+              "a service on 127.0.0.1 is reachable from its own host")
+        if not reached:
+            failures.append("loopback: a service bound to 127.0.0.1 could not be reached locally, "
+                            "so every host-local service on an unopened port is broken")
+
         # THE CROSSING, WHICH IS THE HOOK NOTHING ELSE IN THIS FILE REACHES (ch4-1).
         print()
         for port, expect, what in (
