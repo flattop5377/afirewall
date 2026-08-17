@@ -306,8 +306,13 @@ def get_parser():
    # `restart`, `reload` and `force-reload` are never sent by netfilter-persistent at all. They
    # exist here for a person or a configuration manager, so they are aliases of `regenerate`, which
    # is what somebody typing them after editing afirewall.conf means.
-   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two')
-   parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits')
+   parser.add_argument('command', choices=['restore', 'regenerate', 'start', 'restart', 'reload', 'force-reload', 'stop', 'flush', 'save', 'test', 'add-service', 'enable', 'disable'], help='restore a saved ruleset, or regenerate one from the configuration. start/restart/reload/force-reload are netfilter-persistent\'s names for those two. enable/disable set one flag in afirewall.conf and report what changed')
+   parser.add_argument('service', nargs='?', help='add-service: the name of the service, lower-case letters and digits. enable/disable: the flag to set, as <inbound|outbound>.<service>')
+   # A DRY RUN IS THE COMMAND'S JOB AND NOT THE CALLER'S (ch3-3). ansible's --check does not run a
+   # `command:` at all: it returns rc 0 with empty stdout and a register that is DEFINED, so a play
+   # reading back what it just did reads a fabricated success and asserts on it. The pair that
+   # makes a check run real is `check_mode: false` on the task with this flag passed explicitly.
+   parser.add_argument('--dry-run', action='store_true', help='enable/disable: do everything except the write, validation included, and report what would have changed')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
    parser.add_argument('--tcp', action='append', type=int, default=[], metavar='PORT', help='add-service: a TCP port this service uses - repeatable')
@@ -359,6 +364,21 @@ def parse_arguments():
                   'next reader inherits an argument rather than a habit.')
       return args
 
+   # SETTING A FLAG IS NOT A PRIVILEGED OPERATION EITHER, and it stops short of the kernel for the
+   # same reason add-service does: it edits one line of a text file. Requiring nft, ip and a route
+   # to the internet before it would mean a configuration manager could not set a flag on a host
+   # whose network is the thing being fixed - and `--help` would need all three to print.
+   #
+   # It does need the configuration, so those two checks are made here rather than skipped.
+   if args.command in ('enable', 'disable'):
+      if args.service is None:
+         sys.exit(args.command + ' needs a flag, as <inbound|outbound>.<service>')
+      if not os.access(args.basedir, mode=os.R_OK):
+         sys.exit('Base configuration directory ' + args.basedir + ' can\'t be opened')
+      if not os.access(args.basedir + '/afirewall.conf', mode=os.R_OK):
+         sys.exit('Configuration file ' + args.basedir + '/afirewall.conf can\'t be opened')
+      return args
+
    if not shutil.which(args.nft, mode=os.X_OK): sys.exit(args.nft + ' is not executable')
    nft_completed = subprocess.run(args=[args.nft, '-V'], capture_output=True, encoding='UTF-8')
    pattern = re.compile('nftables')
@@ -398,6 +418,77 @@ def get_configuration():
             kv = li.split(':')
             config = branch(config, kv[0].split('.'), kv[1])
    return config
+
+#: THE SET A FLAG HAS TO BE IN, read off the template tree and never off afirewall.conf.
+#:
+#: The conf is the thing being validated, so a validator that trusted it would bless `inbound.tor`
+#: forever - which is precisely the fault ch3-2 exists to refuse. A flag is real when some family
+#: has a template to include for it; that is the same rule the package's own skew tests apply from
+#: both directions, and it means the answer follows the templates a release actually ships.
+#:
+#: Both roots, in the same precedence as everything else here: an admin who dropped a template
+#: under the base directory has a real flag for it, whether or not the package has ever heard of
+#: the service (ch2-8).
+def known_flags(base_directory):
+   flags = set()
+   for root in (base_directory, SHIPPED):
+      for family in ('ipv4', 'ipv6'):
+         for side in ('inbound', 'outbound'):
+            directory = os.path.join(root, 'templates', family, side)
+            if not os.path.isdir(directory):
+               continue
+            for name in os.listdir(directory):
+               if name.endswith('.rules'):
+                  flags.add(side + '.' + name[:-len('.rules')])
+   return flags
+
+def set_flag(base_directory, flag, value, dry_run):
+   """Set one flag, and report what actually happened as one JSON object (ch3-5, ch3-6).
+
+   THE FILE IS EDITED LINE BY LINE RATHER THAN REWRITTEN. afirewall.conf is a dpkg conffile
+   carrying comments that argue for its own contents, and a function that parsed it into a dict and
+   printed the dict back would silently discard every one of them. So the matching line is replaced
+   where it sits and a new flag is appended, which is also what keeps `lineinfile` and this
+   subcommand interchangeable on the same file (ch1-2).
+
+   `was` IS null WHEN THE FLAG WAS NOT THERE, and that is not the same as `disable`. Both leave the
+   service off, and only one of them means somebody decided: reporting the absent case as `disable`
+   would invent a decision nobody took, in the output a configuration manager reads.
+   """
+   flag = flag.lower()
+   if flag not in known_flags(base_directory):
+      sys.exit('There is no template behind ' + flag + ', so setting it would write a line that '
+               'survives every reload and governs nothing. That is what `inbound.tor` was. Add a '
+               'template with `afirewall add-service`, or check the spelling.')
+
+   path = base_directory + '/afirewall.conf'
+   with open(path) as file:
+      lines = file.readlines()
+
+   was = None
+   for number, line in enumerate(lines):
+      bare = re.sub(r'\s+', '', line).lower()
+      if bare.startswith('#') or ':' not in bare:
+         continue
+      if bare.split(':')[0] == flag:
+         was = bare.split(':')[1] or None
+         lines[number] = flag + ': ' + value + '\n'
+         break
+   else:
+      # Appended rather than inserted in any particular place: the file is an unordered list of
+      # flags, and a tool that sorted it would rewrite lines nobody asked it to touch.
+      lines.append(flag + ': ' + value + '\n')
+
+   changed = was != value
+   # WRITTEN ONLY WHEN SOMETHING CHANGES, which is not merely an optimisation. Rewriting a file
+   # with identical content still moves its mtime, and something else on the host is entitled to
+   # watch that - so a no-op that touched the file would be a no-op only as far as this program's
+   # own report was concerned.
+   if changed and not dry_run:
+      with open(path, 'w') as file:
+         file.writelines(lines)
+
+   print(json.dumps({'changed': changed, 'flag': flag, 'was': was, 'now': value}))
 
 def users_a_service_matches(base_directory, service):
    """Which system users a service's rules match on, read out of the rules themselves.
@@ -480,6 +571,14 @@ if __name__ == "__main__":
    if args.command == 'add-service':
       ports = [('tcp', port) for port in args.tcp] + [('udp', port) for port in args.udp]
       add_service(args.basedir, args.service, args.direction, ports, args.posture, args.because)
+      sys.exit(0)
+
+   # EXIT ZERO WHETHER OR NOT ANYTHING CHANGED (ch3-5). Changed is reported in the output, never in
+   # the status: a status that meant `changed` would break `afirewall enable x && ...` for every
+   # person at a shell, to save a configuration manager one parse.
+   if args.command in ('enable', 'disable'):
+      set_flag(args.basedir, args.service,
+               'enable' if args.command == 'enable' else 'disable', args.dry_run)
       sys.exit(0)
 
    if os.geteuid() != 0: sys.exit('Root permissions required.')
