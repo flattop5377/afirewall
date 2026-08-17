@@ -112,6 +112,17 @@ what ships stays rebuildable (`ch5-7`).
 
 ## Open unknowns
 
+- **ch5-U7 — nine subjects are proven against the implementation rather than through the package,
+  and it is not obvious that is wrong.** Grounding named them the moment it could run (`ch5-U6`):
+  chapter 4 and chapter 8's drills ask `service_bodies` and `load_catalogue` what they return,
+  which is precise and cheap and is not evidence about the thing an operator invokes. The board's
+  own advice is to drive them through a declared entry point **or** leave them at the depth they
+  reach and let it say so. Both are defensible here — `tools/lab.py` already drives the real
+  program end to end for `ch1-11` and `ch4-7`, and doing the same per service would mean a full
+  render for each of thirty-four. What is undecided is whether the middle answer is right: one
+  render with everything enabled, asserted per service, which reaches the entry point once and
+  keeps the per-service precision. Anchored to `ch5-1`.
+
 - **ch5-U5 — the manpage is written by hand and drifts, and the thing that would have generated it
   was deleted with the packaging that carried it.** `hatch.toml` held an `argparse-manpage` hook
   producing `doc/man/afirewall.8` from `get_parser()`, and it never ran. What that cost is
@@ -124,14 +135,15 @@ what ships stays rebuildable (`ch5-7`).
   something argparse holds — or whether the answer is a generated options section inside a
   hand-written page. Anchored to `ch5-2`.
 
-- **ch5-U6 — `afirewall.py` has no `main()`, and two separate things are stuck on it.** The file
-  ends in `if __name__ == "__main__":`, so there is no callable entry point. That is why
-  `pyproject.toml` had no `[project.scripts]` — an entry point resolving to nothing — and that
-  reason retired with the wheel. **The other reason did not**: `plumb.toml` sets `entry_points = []`
-  because there is nothing to name, so every behavioural subject in this repository reads
-  `passed-wiring-not-verified` — nine of them after chapters 4 and 8. Grounding is what catches
-  orphaned code, and this package cannot ask for it. A `main()` is a small change that unblocks the
-  half that still matters. Anchored to `ch5-1`.
+- **ch5-U6 — RESOLVED, and resolving it made the board worse and truer.** `afirewall.py` had no
+  callable entry point — eighty-nine lines under `if __name__ == "__main__":` — so `plumb.toml`
+  could name none and grounding never ran. A `main()` and one line of config later it runs, and
+  **nine subjects moved from `passed-wiring-not-verified` to `grounding.not-wired`**: chapters 4
+  and 8's drills call `service_bodies` and `load_catalogue` directly, so what they prove is the
+  implementation rather than the system that calls it. Proven went 40 to 41 and unproven 18 to 26.
+  That is the instrument working: the board could not previously tell a subject proven through the
+  package from one proven against a function inside it, and now it can. **Whether those nine should
+  be driven through the entry point is a separate question and is `ch5-U7`.**
 
 - **ch5-U4 — every "has not happened since" drill in this repository has the same blind spot.**
   `ch5-3`'s history half was scoped to the newest release tag for a good reason and acquired a

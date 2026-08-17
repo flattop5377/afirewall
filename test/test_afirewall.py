@@ -409,11 +409,13 @@ class TestInterfaceDiscovery(unittest.TestCase):
     """
 
     def discover(self, family, destination, fixtures):
-        import types
-        afirewall.args = types.SimpleNamespace(ip='/usr/bin/ip')
-        original, afirewall.ip_json = afirewall.ip_json, lambda *a: fixtures.get(tuple(a), [])
+        # THIS USED TO FABRICATE A MODULE GLOBAL — `afirewall.args = SimpleNamespace(ip=...)` —
+        # because get_external_interface could not be called without one. That the test had to
+        # invent a parsed command line to ask a question about routing is the whole argument for
+        # passing `ip` instead of reaching for it; the stub below is what is left when it does.
+        original, afirewall.ip_json = afirewall.ip_json, lambda ip, *a: fixtures.get(tuple(a), [])
         try:
-            return afirewall.get_external_interface(destination, family)
+            return afirewall.get_external_interface('/usr/bin/ip', destination, family)
         finally:
             afirewall.ip_json = original
 
