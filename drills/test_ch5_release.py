@@ -26,7 +26,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #:
 #: The list is short on purpose. A file arriving here that nobody declared is how a `save` command
 #: and a manpage came to be written on the packaging branch and never reached master.
-UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml", "hatch.toml",
+#: hatch.toml WAS HERE AND THE FILE WAS NOT. It was deleted deliberately by `Remove packaging
+#: config that never ran, and an entry point that never worked` and the declaration outlived it by
+#: months - so the set named four files where three existed, and a declaration with nothing behind
+#: it is the same fault as a config key with no template, one layer up.
+UPSTREAM_ONLY = {"DESCRIPTION.txt", "LICENSE-SHORT.txt", "pyproject.toml",
                  "requirements-build.txt"}
 
 
