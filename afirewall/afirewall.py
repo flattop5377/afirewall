@@ -1138,7 +1138,15 @@ def main():
                   'regenerate` to build one from ' + args.basedir + '/afirewall.conf - it needs '
                   'the network to be up, because the external interface is found by routing '
                   'lookup unless it is named in ' + args.basedir + '/' + INTERFACES_FILE + '.')
-      stop(args.nft)
+      # NO `stop()` HERE ANY MORE, AND THE RULESET IS WHY. Each generated file now opens by
+      # creating and deleting every table this package owns in its family, so loading it replaces
+      # what was there in ONE nft transaction rather than in a teardown followed by a rebuild.
+      #
+      # What that removes is a window. `stop()` deleted the tables and then something had to load
+      # the new ones, and between those two the host had no firewall at all - briefly on a good
+      # run, and permanently on a bad one, because a load that failed after the teardown left
+      # nothing behind. Now a file that fails to load leaves the previous ruleset in place, which
+      # is the same posture `generate` already takes when it refuses rather than disarms.
       for file in saved:
          print('Loading rules from ' + file)
          start(args.nft, file)
