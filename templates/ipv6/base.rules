@@ -321,6 +321,30 @@ table ip6 a-firewall-inbound-ipv6 {
   }
 }
 
+{% if services.forward %}
+##
+# THE CROSSING TABLE, AND IT EXISTS ONLY WHEN SOMETHING ASKS FOR IT (ch4-2, ch4-6).
+#
+# A host that declares no forwarded service emits nothing here at all, so every machine that
+# forwards today - a container runtime publishing a port, a tunnel, a namespace nobody told this
+# package about - keeps working exactly as it did. That is why the chain is conditional rather than
+# shipped permissive and tightened later: there is no migration to run.
+#
+# AND WHY THE FIRST DECLARATION IS A CLIFF (ch4-9). The moment one forwarded service is enabled this
+# chain appears at `policy drop`, and everything else this host was forwarding stops. There is no
+# posture that avoids that and is still a firewall; what the package owes is that nobody crosses the
+# line without being told.
+#
+table ip6 a-firewall-forward-ipv6 {
+
+  chain DROP_BY_DEFAULT {
+    type filter hook forward priority 20; policy drop;
+
+{% for s in services.forward %}{% for c in s.crossing %}    {{ c }}
+{% endfor %}{% endfor %}  }
+}
+{% endif %}
+
 table ip6 a-firewall-outbound-ipv6 {
 
 {% for s in services.outbound %}{% if s.include %}{% include s.include %}{% else %}{{ s.body }}{% endif %}{% endfor %}

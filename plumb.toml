@@ -99,3 +99,13 @@ mutation = false
 #
 # ch8-11 IS the exception and is genuinely inspection: it counts files on disk and imports nothing.
 "ch8-11" = "structural"
+# CHAPTER 4 IS TWO SHAPES AND THE SPLIT IS THE POINT. What can be read is read: whether the forward
+# table is emitted conditionally, whether a blanket conntrack accept has appeared in it, whether
+# afirewall.conf has grown a host-level `forward` flag, and whether enabling the first forwarded
+# service still announces ch4-9. Those are the template and the config file, and inspection settles
+# them. Everything else asks the resolver or the kernel and is left undeclared, so it answers as
+# behavioural — ch4-7 is reachability through a third namespace and is carried by tools/lab.py.
+"ch4-2" = "structural"
+"ch4-3" = "structural"
+# ch4-9 reads afirewall.py's own text for the announcement, which is inspection like the two above.
+"ch4-9" = "structural"

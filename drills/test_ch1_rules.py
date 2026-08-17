@@ -426,6 +426,7 @@ LAB = ROOT / "tools" / "lab.py"
 
 
 @pytest.mark.proves("ch1-11", depth="integration")
+@pytest.mark.proves("ch4-7", depth="integration")
 def test_every_counter_moves_for_the_traffic_that_names_it():
     """The counters, read against traffic sent on purpose rather than against whatever arrived.
 
@@ -439,6 +440,10 @@ def test_every_counter_moves_for_the_traffic_that_names_it():
     Skipping without root is honest — the lab creates namespaces and loads a ruleset, and neither
     is available to a normal user. A skip here means nobody has shown the counters fire, which is
     the same thing `ch1-9` says about a counter that reads zero.
+
+    IT ALSO CARRIES ch4-7, because the lab grew a third namespace and the same run now asks whether
+    a service behind the target is reachable through it. Two claims off one run rather than two
+    runs: the lab is expensive, and a second invocation would be the same evidence spent twice.
     """
     if os.geteuid() != 0:
         pytest.skip("the lab creates network namespaces and loads a ruleset — run the suite as "

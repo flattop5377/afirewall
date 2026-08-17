@@ -36,11 +36,18 @@ class Family(Enum):
    LO = 3
 
 
+#: EVERY TABLE THIS PACKAGE OWNS, and the list has to be complete or `stop` leaves one loaded.
+#: The forward pair is conditional — a host that declares no forwarded service never has them — so
+#: deleting them is allowed to fail and does, silently, which is why they can be named here
+#: unconditionally rather than needing the configuration read to find out.
+OWNED_TABLES = (('ip', 'a-firewall-inbound-ipv4'), ('ip', 'a-firewall-outbound-ipv4'),
+                ('ip', 'a-firewall-forward-ipv4'), ('ip6', 'a-firewall-inbound-ipv6'),
+                ('ip6', 'a-firewall-outbound-ipv6'), ('ip6', 'a-firewall-forward-ipv6'))
+
 def stop():
-   subprocess.run(args=[args.nft, 'delete', 'table', 'ip', 'a-firewall-inbound-ipv4'], capture_output=True, encoding='UTF-8')
-   subprocess.run(args=[args.nft, 'delete', 'table', 'ip', 'a-firewall-outbound-ipv4'], capture_output=True, encoding='UTF-8')
-   subprocess.run(args=[args.nft, 'delete', 'table', 'ip6', 'a-firewall-inbound-ipv6'], capture_output=True, encoding='UTF-8')
-   subprocess.run(args=[args.nft, 'delete', 'table', 'ip6', 'a-firewall-outbound-ipv6'], capture_output=True, encoding='UTF-8')
+   for family, table in OWNED_TABLES:
+      subprocess.run(args=[args.nft, 'delete', 'table', family, table],
+                     capture_output=True, encoding='UTF-8')
 
 def start(nft_input):
    """Load a ruleset, and say so when it does not load.
@@ -358,6 +365,8 @@ force-reload, stop, flush, save - and arrives from the system rather than from y
    parser.add_argument('--dry-run', action='store_true', help='enable/disable: do everything except the write, validation included, and report what would have changed')
    parser.add_argument('--inbound', dest='direction', action='store_const', const='inbound', help='add-service: the host answers on these ports')
    parser.add_argument('--outbound', dest='direction', action='store_const', const='outbound', help='add-service: the host reaches out on these ports')
+   parser.add_argument('--forward', dest='direction', action='store_const', const='forward', help='add-service: the host forwards these ports to somewhere else - needs --to')
+   parser.add_argument('--to', help='add-service: where a forwarded service actually runs, as an address this host can route to')
    parser.add_argument('--tcp', action='append', type=int, default=[], metavar='PORT', help='add-service: a TCP port this service uses - repeatable')
    parser.add_argument('--udp', action='append', type=int, default=[], metavar='PORT', help='add-service: a UDP port this service uses - repeatable')
    # NO DEFAULT, DELIBERATELY (ch2-5). A posture nobody chose is indistinguishable from an
@@ -396,7 +405,13 @@ def parse_arguments():
    # could not add a service - or read `--help` - without root, which is how the discoverable
    # option becomes the undiscoverable one (ch2-4).
    if args.command == 'add-service':
-      if args.direction is None: sys.exit('add-service needs --inbound or --outbound')
+      if args.direction is None: sys.exit('add-service needs --inbound, --outbound or --forward')
+      if args.direction == 'forward' and not args.to:
+         sys.exit('--forward needs --to: a forwarded service is a record with somewhere to send '
+                  'the traffic, and the rules that admit it are derived from that address (ch4-8).')
+      if args.to and args.direction != 'forward':
+         sys.exit('--to only means anything with --forward. An inbound or outbound service '
+                  'terminates on this host, so there is nowhere else to send it.')
       if args.service is None: sys.exit('add-service needs a service name')
       if args.posture is None:
          sys.exit('add-service needs --posture. There is no default: a rule whose posture nobody '
@@ -548,13 +563,47 @@ def service_bodies(base_directory, family, config):
    the class of fault this chapter was written for: a guard cannot name a flag that does not exist
    if there is no guard.
    """
-   bodies = {'inbound': [], 'outbound': []}
+   bodies = {'inbound': [], 'outbound': [], 'forward': []}
    for (direction, name), record in sorted(load_catalogue(base_directory).items()):
       if not config.get(direction, {}).get(name):
          continue
       relative = family + '/' + direction + '/' + name + '.rules'
       handwritten = first_existing(base_directory + '/templates/' + relative,
                                    SHIPPED + '/templates/' + relative)
+      # A FORWARDED SERVICE TERMINATES SOMEWHERE ELSE, and that is the only difference the
+      # vocabulary carries (ch4-8). Its two rules are the crossing: one admitting traffic TO the
+      # destination and one admitting the answer back FROM it - measured on 2026-08-17 as the
+      # minimum that lets a namespaced service be reached while a `policy drop` forward chain
+      # refuses the rest. No blanket `ct state established,related accept` anywhere near it, for
+      # the reason ch1-1 refuses one on input: the return path is admitted by this service's own
+      # record or not at all.
+      if direction == 'forward':
+         if not record.get('to'):
+            sys.exit('forward.' + name + ' declares no `to`, so there is nowhere to forward it. A '
+                     'forwarded service is a record with somewhere to send the traffic (ch4-8).')
+         # A DESTINATION BELONGS TO ONE FAMILY, and putting an IPv4 address in an ip6 table is a
+         # parse error that costs the whole family - the same failure mode as `ip saddr` in an ip6
+         # template, which is how this package's v6 ruleset once spent years not loading. A record
+         # may carry `to_ipv4` and `to_ipv6`; a plain `to` serves whichever family it belongs to,
+         # and the other simply has no crossing. That is a statement rather than an omission: a
+         # service reachable only over v4 SHOULD have no v6 rules.
+         where = record.get('to_' + family, record.get('to'))
+         wanted = 4 if family == 'ipv4' else 6
+         if ip_address(where).version != wanted:
+            continue
+         address = 'ip daddr' if family == 'ipv4' else 'ip6 daddr'
+         source = 'ip saddr' if family == 'ipv4' else 'ip6 saddr'
+         crossing = []
+         for protocol, port in record_ports(record, family):
+            crossing.append(address + ' ' + where + ' ' + protocol + ' dport ' + str(port)
+                            + ' ct state new,established accept')
+            crossing.append(source + ' ' + where + ' ' + protocol + ' sport ' + str(port)
+                            + ' ct state established accept')
+         bodies[direction].append({'name': name, 'upper': name.upper(), 'to': where,
+                                   'jumps': [], 'replies': [], 'crossing': crossing,
+                                   'include': None, 'body': None})
+         continue
+
       # HOW THE TRAFFIC IS SELECTED, and there are two answers. Almost every service is chosen by
       # a port; outbound tor and btc are chosen by the owner of the local socket, which no port
       # can express. Both produce a jump and a reply from the SAME record, which is the whole of
@@ -663,7 +712,7 @@ def render_service(family, record):
    return SERVICE_TEMPLATE.format(title=title, description=description, sets=sets,
                                   upper=service.upper(), posture=note, rules=rules)
 
-def add_service(base_directory, service, direction, ports, posture, because):
+def add_service(base_directory, service, direction, ports, posture, because, to=None):
    """Add a service by adding a record. That is the whole of it (ch8-3).
 
    THIS FUNCTION USED TO WRITE FIVE THINGS: a template in each family, an include, a jump, and the
@@ -690,8 +739,10 @@ def add_service(base_directory, service, direction, ports, posture, because):
              'name = "' + service + '"',
              'direction = "' + direction + '"',
              'title = "' + service.upper() + ' Rules"',
-             'ports = [' + ', '.join('"' + p + '/' + str(n) + '"' for p, n in ports) + ']',
-             'posture = "' + posture + '"']
+             'ports = [' + ', '.join('"' + p + '/' + str(n) + '"' for p, n in ports) + ']']
+   if to:
+      record.append('to = "' + to + '"')
+   record.append('posture = "' + posture + '"')
    if posture in ('enforce', 'instrument'):
       # The rate and count this package has always used for a service nobody has measured. They
       # are ch8-U1's subject and the catalogue is where that is now visible.
@@ -810,6 +861,22 @@ def set_flag(base_directory, flag, value, dry_run):
       warn(flag + ' is ' + value + 'd in the configuration and the kernel has not been told. '
            'Run `afirewall reload` to apply it.')
 
+   # ch4-9, SAID AT THE MOMENT SOMEBODY CROSSES IT. Until a forwarded service is enabled this host
+   # has no chain at the forward hook and forwards everything; the first one brings a chain into
+   # existence at `policy drop` and everything else this machine was passing through - a container
+   # runtime's published ports above all - stops. There is no posture that avoids that and is still
+   # a firewall, so what the package owes is that nobody arrives there by surprise.
+   if changed and value == 'enable' and flag.startswith('forward.'):
+      already = [d + '.' + n for (d, n) in load_catalogue(base_directory)
+                 if d == 'forward' and d + '.' + n != flag]
+      config = get_configuration()
+      if not any(config.get('forward', {}).get(other.split('.', 1)[1]) for other in already):
+         warn('THIS IS THE FIRST FORWARDED SERVICE ON THIS HOST. Until now nothing filtered '
+              'traffic this machine forwards; after the next reload a chain exists at the forward '
+              'hook with policy drop, and everything else being forwarded - a container runtime\'s '
+              'published ports, a tunnel, a namespace nobody declared - is refused. Declare those '
+              'too, or do not enable this one (ch4-9).')
+
 def users_a_service_matches(base_directory, service):
    """Which system users a service's rules match on, read out of the rules themselves.
 
@@ -890,7 +957,8 @@ if __name__ == "__main__":
    # the top of the file. It used to run first, which meant `--help` required root.
    if args.command == 'add-service':
       ports = [('tcp', port) for port in args.tcp] + [('udp', port) for port in args.udp]
-      add_service(args.basedir, args.service, args.direction, ports, args.posture, args.because)
+      add_service(args.basedir, args.service, args.direction, ports, args.posture, args.because,
+                  args.to)
       sys.exit(0)
 
    # EXIT ZERO WHETHER OR NOT ANYTHING CHANGED (ch3-5). Changed is reported in the output, never in

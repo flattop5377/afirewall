@@ -39,6 +39,11 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "afwlab-t"
 ATTACKER = "afwlab-a"
+# THE THIRD NAMESPACE IS WHAT MAKES THIS A FORWARDING LAB (ch4-1). With two, the target terminates
+# everything and only `input` and `output` are ever exercised - which is exactly the blind spot
+# chapter 4 is about, reproduced in the instrument meant to find it. A service BEHIND the target
+# turns the target into a router for its own service, which is the shape a namespaced host has.
+SERVICE = "afwlab-s"
 
 # ADDRESSES CHOSEN AGAINST THE SPOOF LISTS, which is not a detail. The obvious lab ranges —
 # 198.51.100.0/24 and 2001:db8::/32 — are both ON those lists, so a lab built on them has every
@@ -46,6 +51,11 @@ ATTACKER = "afwlab-a"
 # 100.64.0.0/10 and 2a00:dead::/64 are absent from both lists.
 V4_NET, V4_TARGET, V4_ATTACKER = "100.64.0.0/24", "100.64.0.1", "100.64.0.2"
 V6_NET, V6_TARGET, V6_ATTACKER = "2a00:dead::/64", "2a00:dead::1", "2a00:dead::2"
+# The service network, behind the target. Routed rather than translated, which is the case ch4
+# covers - ch4-U4 is the translated one, and this package has no nat table to test it with.
+SVC_NET, SVC_TARGET, SVC_HOST = "10.99.0.0/24", "10.99.0.1", "10.99.0.2"
+FORWARDED_PORT = 1965
+UNDECLARED_PORT = 2222
 # ON the lists, for the one case that wants to be caught by SPOOFING.
 V4_SPOOFED, V6_SPOOFED = "203.0.113.5", "2001:db8::5"
 
@@ -56,7 +66,7 @@ def run(*argv, ns=None, check=True, **kw):
 
 
 def teardown():
-    for ns in (TARGET, ATTACKER):
+    for ns in (TARGET, ATTACKER, SERVICE):
         subprocess.run(["ip", "netns", "del", ns], capture_output=True)
 
 
@@ -68,7 +78,7 @@ def setup():
     exits — correctly, and unhelpfully for a lab.
     """
     teardown()
-    for ns in (TARGET, ATTACKER):
+    for ns in (TARGET, ATTACKER, SERVICE):
         run("ip", "netns", "add", ns)
     run("ip", "link", "add", "t0", "netns", TARGET, "type", "veth", "peer", "a0", "netns", ATTACKER)
     for ns, dev, v4, v6, peer4, peer6 in (
@@ -82,6 +92,17 @@ def setup():
         run("ip", "-6", "route", "add", "default", "via", peer6, ns=ns)
     # The attacker must be allowed to send a source address that is not its own.
     run("ip", "netns", "exec", ATTACKER, "sysctl", "-qw", "net.ipv4.conf.all.rp_filter=0")
+
+    # The service leg, and the routes that make the target a router rather than an endpoint.
+    run("ip", "link", "add", "t1", "netns", TARGET, "type", "veth", "peer", "s0", "netns", SERVICE)
+    run("ip", "addr", "add", f"{SVC_TARGET}/24", "dev", "t1", ns=TARGET)
+    run("ip", "link", "set", "t1", "up", ns=TARGET)
+    run("ip", "addr", "add", f"{SVC_HOST}/24", "dev", "s0", ns=SERVICE)
+    run("ip", "link", "set", "s0", "up", ns=SERVICE)
+    run("ip", "link", "set", "lo", "up", ns=SERVICE)
+    run("ip", "route", "add", "default", "via", SVC_TARGET, ns=SERVICE)
+    run("ip", "route", "add", SVC_NET, "via", V4_TARGET, ns=ATTACKER)
+    run("ip", "netns", "exec", TARGET, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 
 
 def load_ruleset(basedir):
@@ -97,6 +118,21 @@ def load_ruleset(basedir):
     shutil.copytree(ROOT / "templates", pathlib.Path(basedir) / "templates")
     shutil.copytree(ROOT / "lists", pathlib.Path(basedir) / "lists")
     shutil.copy(ROOT / "afirewall.conf", pathlib.Path(basedir) / "afirewall.conf")
+    shutil.copy(ROOT / "services.toml", pathlib.Path(basedir) / "services.toml")
+    # A FORWARDED SERVICE, DECLARED HERE RATHER THAN SHIPPED. It is the lab's own service and has
+    # no business in the package's catalogue - but declaring it exercises ch4-2's conditional
+    # chain, ch4-4's derived pair, and ch8-9's merge, all of which are the same act.
+    with open(pathlib.Path(basedir) / "services.toml", "a") as file:
+        file.write(f'''
+[[service]]
+name = "labsvc"
+direction = "forward"
+title = "LABSVC Rules"
+ports = ["tcp/{FORWARDED_PORT}"]
+to = "{SVC_HOST}"
+''')
+    with open(pathlib.Path(basedir) / "afirewall.conf", "a") as file:
+        file.write("forward.labsvc: enable\n")
     generated = pathlib.Path(basedir) / "generated"
     generated.mkdir()
     script = (f"mkdir -p /var/lib/afirewall && mount --bind {generated} /var/lib/afirewall && "
@@ -169,6 +205,34 @@ def scapy_interpreter():
     return None
 
 
+def crossing(port, expect):
+    """Can the attacker reach the service namespace on this port, through the target?
+
+    THE ONLY CASE IN THIS LAB THAT IS NOT A COUNTER. A forwarded service is admitted or refused by
+    a chain at a hook the rest of the file never touches, and what a counter would say about it is
+    that a rule matched - not that a connection completed. Reachability is the claim (ch4-7), so
+    reachability is what is measured.
+    """
+    listener = subprocess.Popen(
+        ["ip", "netns", "exec", SERVICE, sys.executable, "-c",
+         "import socket,threading,time\n"
+         "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)\n"
+         f"s.bind(('{SVC_HOST}',{port})); s.listen(1)\n"
+         "threading.Thread(target=lambda:(s.accept()[0].send(b'x'),),daemon=True).start()\n"
+         "time.sleep(6)"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        probe = run("ip", "netns", "exec", ATTACKER, sys.executable, "-c",
+                    "import socket,sys\n"
+                    f"socket.create_connection(('{SVC_HOST}',{port}),2)\n",
+                    check=False, timeout=10)
+        reached = probe.returncode == 0
+    finally:
+        listener.kill()
+        listener.wait()
+    return reached == expect, reached
+
+
 def fire(python, expression):
     """Send it, and raise if it was not sent. A silent sender is a harness that lies."""
     script = ("import logging; logging.getLogger('scapy').setLevel(logging.ERROR)\n"
@@ -222,6 +286,19 @@ def main():
             if not ok:
                 failures.append(f"{name}: {what} — sent, and the counter did not move")
             before = after
+        # THE CROSSING, WHICH IS THE HOOK NOTHING ELSE IN THIS FILE REACHES (ch4-1).
+        print()
+        for port, expect, what in (
+                (FORWARDED_PORT, True, f"declared forwarded service reaches tcp/{FORWARDED_PORT}"),
+                (UNDECLARED_PORT, False,
+                 f"undeclared port tcp/{UNDECLARED_PORT} is refused by the forward chain")):
+            ok, reached = crossing(port, expect)
+            print(f"  {'PASS' if ok else 'FAIL'}  {'crossing':<62} {what}")
+            if not ok:
+                failures.append(f"crossing tcp/{port}: expected "
+                                f"{'reachable' if expect else 'refused'}, got "
+                                f"{'reachable' if reached else 'refused'}")
+
         print()
         for line in sorted(counters().items()):
             print(f"  {line[0]:<62} packets={line[1]}")
