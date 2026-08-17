@@ -6,23 +6,74 @@
    - Be easy to install, configure, and maintain
    - Be Ansible friendly
    - Use common tools and formats
+## Using it
+
+Three commands cover almost everything:
+
+```
+$ afirewall enable inbound.smtp     # open a service
+{"changed": true, "flag": "inbound.smtp", "was": "disable", "now": "enable"}
+
+$ afirewall disable inbound.smtp    # close it again
+$ afirewall reload                  # rebuild the ruleset and load it
+```
+
+`enable` and `disable` only edit the configuration — **nothing reaches the kernel until `reload`**.
+They refuse a flag nothing declares, so a typo is an error rather than a line that persists and
+governs nothing. They print one JSON object and exit 0 whether or not anything changed, which is
+what lets a configuration manager gate a single reload on `changed` and leave a converged host
+quiet.
+
+For a service this package does not ship a rule for:
+
+```
+$ afirewall add-service gemini --inbound --tcp 1965 \
+      --posture enforce --because "an anonymous peer that replaces itself"
+$ afirewall enable inbound.gemini
+$ afirewall reload
+```
+
+`--posture` and `--because` are required and have no default. A rate limit that refuses excess and
+one that merely counts it look identical in a ruleset, so this package will not write one without
+being told which it is and why.
+
+`afirewall --help` lists everything; most of the rest of that list is netfilter-persistent's
+vocabulary arriving from the system rather than from you.
+
 ## What this covers
 
-A host, and only a host. afirewall hooks `input` and `output`, both with `policy drop`, plus a
-`prerouting` chain that drops incoherent traffic before anything else looks at it.
+A host, and — unless you ask otherwise — only a host. afirewall hooks `input` and `output`, both
+with `policy drop`, plus a `prerouting` chain that drops incoherent traffic before anything else
+looks at it.
 
-**It does not hook `forward`.** Traffic a machine *routes* — a published container port, a DNAT to
-another host, anything crossing a tunnel to somewhere else — does not pass through any chain this
-package installs, and the kernel's own default at that hook is accept. So on a machine with
-`ip_forward` turned on, afirewall governs what the machine itself answers and nothing it passes
-along. If you need the forwarded path filtered, this is not yet the tool for it.
+**It hooks `forward` only if you declare something forwarded.** Traffic a machine *routes* — a
+published container port, a tunnel to somewhere else — passes no chain this package installs until
+a service says otherwise, and the kernel's own default at that hook is accept. So by default
+afirewall governs what the machine itself answers and nothing it passes along.
+
+Declaring a forwarded service changes that, in both directions at once:
+
+```
+$ afirewall add-service app --forward --tcp 8080 --to 10.99.0.2 \
+      --posture instrument --because "a service I run, on a machine I run"
+$ afirewall enable forward.app
+```
+
+**The first forwarded service you enable is a one-way door.** Until then this host has no chain at
+the forward hook and passes everything it routes; afterwards a chain exists there with `policy
+drop`, and anything else being forwarded — a container runtime's published ports above all — is
+refused unless it is declared too. `afirewall enable` says so at the moment you cross it.
+
+**Translation is not built.** A namespace or container reached by DNAT from a private range needs a
+`nat` table, and this package has never emitted one. What is covered is the *routed* case: a
+destination this host can already route to.
 
 ## Running alongside other things that write packet filter rules
 
-afirewall keeps to its own four tables — `a-firewall-inbound-ipv4`, `a-firewall-outbound-ipv4` and
-their IPv6 pair — and `afirewall stop` deletes exactly those. It never flushes the ruleset, so
-nothing it does removes rules you or another tool put there. Two cases are worth knowing about
-anyway.
+afirewall keeps to its own tables — `a-firewall-inbound-ipv4`, `a-firewall-outbound-ipv4` and their
+IPv6 pair, plus an `a-firewall-forward-*` pair that exists only while something forwarded is enabled
+— and `afirewall stop` deletes exactly those. It never flushes the ruleset, so nothing it does
+removes rules you or another tool put there. Two cases are worth knowing about anyway.
 
 ### fail2ban
 
@@ -72,3 +123,18 @@ $ python3 -m pip install -r requirements.txt
 ```
 $ python3 -m unittest discover
 ```
+
+The package's own tests need no root. The spec drills under `drills/` do more, and the ones that
+matter most need both:
+
+```
+$ sudo .venv/bin/python -m pytest          # the drills, including the lab
+$ sudo .venv/bin/python tools/lab.py       # the lab on its own
+```
+
+`tools/lab.py` builds three network namespaces — an outside, a host running this package's real
+ruleset, and a service behind that host — and fires known-bad traffic at it: a spoofed source, a
+NULL-flag segment, port zero, a non-first fragment, in both families, plus a forwarded service that
+should be reachable and a port that should not. It is the only instrument here that can show a
+counter fires, because a counter read against ambient traffic cannot tell a rule that works from one
+nothing has aimed anything at.
