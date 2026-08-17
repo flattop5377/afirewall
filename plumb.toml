@@ -82,6 +82,8 @@ mutation = false
 "ch6-5" = "structural"
 "ch6-6" = "structural"
 "ch6-7" = "structural"
+# ch6-9 asks get_spoofed_networks what it computes, which runs production code rather than reading it.
+
 # CHAPTER 7 IS WHERE FILES GO, which is stated in debian/afirewall.install and in the loader, and
 # is therefore settled by reading. What is NOT is an upgrade actually behaving (ch7-U2), which needs
 # two releases and a host to take one. ch7-3 and ch7-5 are NOT declared here: they import the

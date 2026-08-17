@@ -184,6 +184,7 @@ def get_spoofed_networks(base_directory, interface):
    name = '/lists/spoofed_' + interface.family.name + '_networks.list'
    filename = first_existing(base_directory + name, SHIPPED + name)
    local_network = interface.network
+   keep = [local_network] + get_stated_local_networks(base_directory, interface.family)
    spoofed_networks  = []
    # Both families. This read used to be wrapped in `if interface.family == Family.IPV4`,
    # which meant ipv6 got an empty list however good its list file was - and the SPOOFING
@@ -200,11 +201,12 @@ def get_spoofed_networks(base_directory, interface):
             else:
                match = re.search(r'([0-9a-fA-F:/]+)', li)
             list_network = ip_network(match.group(1))
-            if local_network.subnet_of(list_network):
-                for network in list_network.address_exclude(local_network):
-                  spoofed_networks.append(network)
-            else:
-               spoofed_networks.append(list_network)
+            # EVERY NETWORK THAT LEGITIMATELY REACHES THIS HOST COMES OUT, not just the one its
+            # interface sits on. A host behind a router that terminates a tunnel receives private
+            # sources from subnets it is not on, and subtracting only its own /24 leaves those in
+            # the drop list - which is a host, and would have cost the deployment its syslog, its backups
+            # and its alerting.
+            spoofed_networks.extend(without(list_network, keep))
    return spoofed_networks
 
 def process_scripts(base_directory, interface, config):
@@ -315,6 +317,73 @@ def get_external_network(ip, device, address, family):
 #: composed by appending service flags, and a configuration manager restores one baseline shared by
 #: every host before each run. A per-host fact there is erased by that restore every converge.
 INTERFACES_FILE = 'interfaces.conf'
+
+#: WHERE A HOST SAYS ITS PRIVATE SPACE IS BIGGER THAN ITS SUBNET.
+#:
+#: The spoof chain drops private sources arriving on the external device, minus the network that
+#: device is on - which is right for a host whose tunnel is its own interface, because the traffic
+#: it carries never touches the external one. It is WRONG for a host behind a router that
+#: terminates the tunnel: the packets arrive already decapsulated, on the ordinary LAN interface,
+#: carrying a private source from a subnet this host is not on.
+#:
+#: Measured on a host, 2026-08-17, before it cost anything: every live connection to the deployment's log
+#: collector, backup server and alerter came from 203.0.113.0/24 over the tunnel, and its
+#: computed spoof list contained 203.0.113.0/21. Rolling the firewall out would have dropped
+#: syslog, backups and every alerter check-in from all seven VPS hosts, at priority raw, before any
+#: accept rule - silently, from the hosts' side.
+#:
+#: NOT A TRUST LIST, AND THE NAME MATTERS. ch1-U9 already records that "external" is a trust
+#: judgement the routing table cannot make; this file makes no judgement at all. It says where
+#: traffic may legitimately COME FROM, which is a fact about topology that only the operator holds.
+LOCAL_NETWORKS_FILE = 'local_networks.conf'
+
+def get_stated_local_networks(base_directory, family):
+   """Networks the operator says legitimately reach this host, for one family.
+
+   Silence means the interface's own subnet and nothing else, which is what keeps every host that
+   does not need this working without saying anything - the same posture `interfaces.conf` takes.
+   """
+   path = base_directory + '/' + LOCAL_NETWORKS_FILE
+   if not os.path.exists(path):
+      return []
+   wanted = 4 if family == Family.IPV4 else 6
+   stated = []
+   with open(path) as file:
+      for number, line in enumerate(file, 1):
+         li = line.split('#')[0].strip()
+         if not li:
+            continue
+         try:
+            network = ip_network(li)
+         except ValueError:
+            # REFUSED RATHER THAN SKIPPED. A line that does not parse is a network somebody meant
+            # to admit, and ignoring it produces a host that drops the traffic they just told it
+            # to accept - with the file on disk saying otherwise.
+            sys.exit(path + ':' + str(number) + ': `' + li + '` is not a network. One CIDR per '
+                     'line, in either family; anything else is refused rather than ignored.')
+         if network.version == wanted:
+            stated.append(network)
+   return stated
+
+def without(network, excluded):
+   """`network` with every one of `excluded` that falls inside it taken out.
+
+   address_exclude handles one subnet at a time and raises unless it is contained, so subtracting a
+   set means folding it - and a piece wholly inside something excluded disappears rather than
+   being kept.
+   """
+   pieces = [network]
+   for gone in excluded:
+      remaining = []
+      for piece in pieces:
+         if piece.subnet_of(gone):
+            continue
+         if gone.subnet_of(piece):
+            remaining.extend(piece.address_exclude(gone))
+         else:
+            remaining.append(piece)
+      pieces = remaining
+   return pieces
 
 def get_stated_external_device(base_directory):
    """The interface the operator named, or None if they named none.
