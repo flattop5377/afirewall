@@ -77,6 +77,100 @@ first. `tools/lab.py` settles it by sending the traffic on purpose.
 `afirewall --help` lists everything; most of the rest of that list is netfilter-persistent's
 vocabulary arriving from the system rather than from you.
 
+## From Ansible
+
+**Being administrable from a configuration manager is one of the two reasons this package exists**,
+so `/etc/afirewall/afirewall.conf` is a plain list of `<direction>.<service>: enable` lines and
+stays one. `afirewall enable` edits that file line by line rather than parsing it and printing it
+back, which keeps the subcommand and `ansible.builtin.lineinfile` interchangeable on the same file:
+a host carrying an older release is not stranded, and plays migrate one at a time.
+
+Nothing here is an ansible template. The `templates/` directory holds nftables rule fragments the
+package ships and renders itself; no play needs to know it exists.
+
+### The two idioms
+
+`lineinfile`, which works against any release:
+
+```yaml
+- name: "allow smtp in and out"
+  ansible.builtin.lineinfile:
+    path: /etc/afirewall/afirewall.conf
+    line: "{{ item }}: enable"
+    regexp: "^{{ item }}:.*$"
+  loop: [inbound.smtp, outbound.smtp]
+  register: mail_rules
+
+- name: reload the firewall
+  ansible.builtin.command: /usr/sbin/afirewall reload
+  when: mail_rules.changed
+```
+
+Honest about change — `mail_rules.changed` is what keeps a converged host quiet — and silent about
+everything else. `inbound.smtpp` would be written, reported as a change, reloaded, and open nothing.
+
+The subcommand, which cannot be told to write a flag nothing declares:
+
+```yaml
+- name: "allow smtp in and out"
+  ansible.builtin.command:
+    argv: "{{ ['/usr/sbin/afirewall', 'enable', item]
+             + (['--dry-run'] if ansible_check_mode else []) }}"
+  loop: [inbound.smtp, outbound.smtp]
+  register: mail_rules
+  check_mode: false
+  changed_when: (mail_rules.stdout | from_json).changed
+
+- name: reload the firewall
+  ansible.builtin.command: /usr/sbin/afirewall reload
+  when: mail_rules.changed
+```
+
+Three lines longer, and what those three lines buy is that `inbound.smtpp` **fails the play**.
+`check_mode: false` paired with an explicit `--dry-run` is what makes a `--check` run real: the task
+is allowed to execute, and what it executes is told not to write. Without that pair ansible skips
+the task and leaves a register the play then reads a fabricated success out of.
+
+`disable` takes the same shape. A service this package ships no rule for needs its own
+`afirewall add-service` play first.
+
+### Taking a service back out
+
+Enabling accumulates. Nothing removes a flag a past play wrote, so a host's configuration drifts
+into the union of every play ever run against it, and deleting the play that opened a port leaves
+the port open.
+
+The reflex is to render the whole file with `ansible.builtin.template`, and the cost of that is
+that a host can no longer be configured from more than one place: every service it will ever run
+has to be known to whichever play owns the template. Restore first and accumulate onto that
+instead. The shipped defaults are installed a second time, where nothing edits them, for exactly
+this:
+
+```yaml
+- name: start from the shipped defaults
+  ansible.builtin.copy:
+    src: /usr/share/afirewall/afirewall.conf
+    dest: /etc/afirewall/afirewall.conf
+    remote_src: true
+
+# ... the per-service plays above, unchanged ...
+```
+
+`/usr/share/afirewall/afirewall.conf` is the same file the package installs into `/etc`, kept where
+nothing edits it so it still says what the defaults *were* after `/etc` has been changed. It is
+**not** "everything off": it enables `inbound.ssh` and the outbound half a host needs in order to be
+administered, resolve names and fetch updates. A restore that guessed at all-flags-disabled would
+close ssh on every host it touched.
+
+**This trades quiet for a configuration that follows from the run.** On a host with anything beyond
+the defaults enabled, the restore rewrites the file on every converge and every service play then
+reports a change, so the reload fires every time — `ch3-7`'s quiet run is what pays for it. Which
+you want is a property of your fleet rather than of this package: accumulate, and stay quiet but
+never subtract; or restore, and know the end state came from the run you just watched.
+
+The argument behind all of this, including why `afirewall enable` is a command rather than an
+ansible module, is `spec/diagrams/chapter-03-honest-to-its-configurator.md`.
+
 ## What this covers
 
 A host, and — unless you ask otherwise — only a host. afirewall hooks `input` and `output`, both
