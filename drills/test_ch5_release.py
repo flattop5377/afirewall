@@ -79,6 +79,8 @@ def test_the_release_sequence_is_in_the_repository():
             ("commit the pristine-tar delta (ch5-7)", "--git-pristine-tar-commit"),
             ("tag the packaging that shipped (ch5-4)", "--git-tag"),
             ("publish to the archive", "includedeb"),
+            ("verify what it signed before pushing it", "VALIDSIG"),
+            ("sign where gpgme cannot reach the key (ch5-1)", "qubes-gpg-client"),
             ("push with an explicit refspec", "HEAD:master"),
             ("ask the remote what it actually has", "ls-remote"),
             ("put the checkout back where it started", "trap finish EXIT")):
@@ -96,6 +98,15 @@ def test_the_release_sequence_is_in_the_repository():
     # two of the three checks deleted, because the other two still matched — which is the same
     # too-loose-regex fault it was written to guard against. Three things get pushed and all three
     # have to be asked about: the branches, the tags, and the archive.
+    # AND IT HAS TO CHECK WHAT IT SIGNED, for the same reason it checks its own push: the failure
+    # is invisible on the machine that causes it. An unsigned or wrongly-signed export breaks
+    # `apt update` on every host in the fleet, at whatever hour each next runs, naming a keyring
+    # rather than this release. A REVOKED key still produces a signature that "verifies", so the
+    # check has to read gpg's status output rather than its exit code.
+    assert "--status-fd" in text and "KEYREVOKED" in text, (
+        "the script does not verify the signature it just made. `gpg --verify` exits 0 for a "
+        "signature by a revoked key, so an exit code is not the check")
+
     asked = len(re.findall(r"ls-remote", text))
     assert asked >= 3, (
         f"the script asks the remote {asked} time(s). Three separate things are pushed - the "

@@ -105,8 +105,81 @@ if [ "$PUBLISH" != "--publish" ]; then
   exit 0
 fi
 
+# REPREPRO SIGNS THROUGH gpgme, AND gpgme SPAWNS /usr/bin/gpg ITSELF. On a host using Qubes Split
+# GPG that bypasses qubes-gpg-client-wrapper however it is wired into the shell, and asks a local
+# keyring that correctly holds no secret half:
+#
+#   Could not find any key matching '208BC127...D4FB'!
+#   ERROR: Could not finish exporting 'stable'!
+#
+# The key is not missing. Qubes documents the wrapper for programs that call the gpg BINARY and
+# documents nothing for GPGME, so there is no configuration that fixes this.
+#
+# AND THE FAILURE IS PARTIAL, WHICH IS WHY IT BELONGS IN THIS SCRIPT RATHER THAN IN A DOCUMENT.
+# includedeb updates the pool and the database and only then fails to export, so `set -e` ends the
+# run HERE - after the build, after both tags, with the .deb in the pool and the indices stale.
+# From outside the repository looks untouched. That is the state this script exists to never leave
+# anybody in, and it is the same shape as the 20260816.2.0-1 push failure noted below.
+#
+# Measured on ops, 2026-09-01, publishing rclone.
 say "publishing to $DEBREPO"
-reprepro -b "$DEBREPO" includedeb stable "$BUILD/afirewall_${VERSION}-1_all.deb"
+SIGNKEY="$(awk '/^SignWith:/ {print $2}' "$DEBREPO/conf/distributions")"
+[ -n "$SIGNKEY" ] || { echo "no SignWith in $DEBREPO/conf/distributions" >&2; exit 1; }
+
+if gpg --list-secret-keys "$SIGNKEY" >/dev/null 2>&1; then
+    reprepro -b "$DEBREPO" includedeb stable "$BUILD/afirewall_${VERSION}-1_all.deb"
+else
+    # A COPY OF conf/, NOT AN EDIT OF IT. The obvious version of this comments SignWith out with
+    # sed and puts it back afterwards, which leaves a window where a failure - or a `git add -A`
+    # three lines further down - commits a repository configured not to sign itself. --confdir
+    # takes the whole directory somewhere else and the tracked file is never touched.
+    say "gpg holds no secret half of $SIGNKEY here; exporting unsigned and signing through the client"
+    SIGNER="$(command -v qubes-gpg-client-wrapper || command -v qubes-gpg-client || true)"
+    [ -n "$SIGNER" ] || { echo "no split-gpg client found and no local secret key" >&2; exit 1; }
+
+    CONFTMP="$(mktemp -d)"
+    cp -a "$DEBREPO/conf/." "$CONFTMP/"
+    sed -i 's/^SignWith:/#SignWith:/' "$CONFTMP/distributions"
+    reprepro --confdir "$CONFTMP" -b "$DEBREPO" includedeb stable \
+        "$BUILD/afirewall_${VERSION}-1_all.deb"
+    rm -rf "$CONFTMP"
+
+    # The two commands debrepo/RESIGN.md documents, with the client in place of gpg.
+    "$SIGNER" --batch --yes --local-user "$SIGNKEY" \
+        --clearsign -o "$DEBREPO/dists/stable/InRelease.new" "$DEBREPO/dists/stable/Release"
+    mv "$DEBREPO/dists/stable/InRelease.new" "$DEBREPO/dists/stable/InRelease"
+
+    "$SIGNER" --batch --yes --local-user "$SIGNKEY" \
+        --armor --detach-sign -o "$DEBREPO/dists/stable/Release.gpg.new" \
+        "$DEBREPO/dists/stable/Release"
+    mv "$DEBREPO/dists/stable/Release.gpg.new" "$DEBREPO/dists/stable/Release.gpg"
+fi
+
+# VERIFIED ON BOTH PATHS, AND THIS SCRIPT HAS NEVER VERIFIED ANYTHING. An unsigned or
+# wrongly-signed export does not fail apt on the machine that made it; it fails `apt update` on
+# every host in the fleet, at whatever hour they next run, naming a keyring rather than this
+# release. Read from --status-fd rather than the human text, because that is the half with a
+# stable vocabulary: VALIDSIG carries the fingerprint, and a REVOKED key still produces a
+# signature that "verifies".
+verify_signature() {
+    local label="$1" out
+    shift
+    out="$(gpg --status-fd=1 --verify "$@" 2>/dev/null || true)"
+    case "$out" in
+        *KEYREVOKED*|*REVKEYSIG*)
+            echo "$label is signed with a REVOKED key - do not push" >&2; exit 1 ;;
+    esac
+    case "$out" in
+        *"VALIDSIG $SIGNKEY"*) ;;
+        *) echo "$label is not a valid signature by $SIGNKEY - do not push" >&2; exit 1 ;;
+    esac
+}
+
+say "verifying the signatures before anything is pushed"
+verify_signature "InRelease"   "$DEBREPO/dists/stable/InRelease"
+verify_signature "Release.gpg" "$DEBREPO/dists/stable/Release.gpg" "$DEBREPO/dists/stable/Release"
+echo "   both signed by $SIGNKEY, not revoked"
+
 git -C "$DEBREPO" add -A
 git -C "$DEBREPO" commit -q -m "afirewall $VERSION-1"
 
